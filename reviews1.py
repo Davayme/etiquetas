@@ -81,7 +81,7 @@ df['satisfaction_class_binomial'] = df['review_score'].apply(calculate_satisfact
 # --- GUARDAR EL DATASET PROCESADO ---
 
 # Guardar el dataset procesado con las nuevas etiquetas
-df.to_csv("reviews_binomial_labeled.csv", sep=";", index=False)
+df.to_csv("reviews_binomial.csv", sep=";", index=False)
 
 # Mostrar el conteo de clases para verificar balance
 print("Conteo de Clases de Retorno del Producto (Binomial):")

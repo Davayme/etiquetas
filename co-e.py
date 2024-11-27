@@ -3,7 +3,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 # Cargar el dataset etiquetado
-df = pd.read_csv("envios_etiquetados.csv", sep=";")
+df = pd.read_csv("envios_etiquetados2.csv", sep=";")
 
 # --- Codificar Variables Categóricas ---
 # Convertir las clases en valores numéricos para calcular correlaciones
