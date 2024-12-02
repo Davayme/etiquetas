@@ -2,89 +2,99 @@ import pandas as pd
 import numpy as np
 
 # Cargar el dataset
-df = pd.read_csv("reviewsC.csv", sep=";")
+df = pd.read_csv("reviews_final.csv", sep=";")
 
-# --- ETIQUETADO PARA product_return_class ---
+# Eliminar espacios en los nombres de las columnas
+df.columns = df.columns.str.strip()
 
-# Calcular la tasa de reseñas bajas (<3) por categoría
-category_review_stats = df.groupby('product_category')['review_score'].apply(
-    lambda scores: (scores < 3).sum() / scores.count()
-).reset_index()
+# Verificar los tipos de datos
+print(df['product_category'].dtype)
 
-# Renombrar columnas
-category_review_stats.columns = ['product_category', 'low_review_rate']
+# Convertir la columna 'product_category' a tipo string si no lo es
+df['product_category'] = df['product_category'].astype(str)
 
-# Calcular estadísticas globales de las tasas
-mean_low_review_rate = category_review_stats['low_review_rate'].mean()
-std_low_review_rate = category_review_stats['low_review_rate'].std()
+# Verificar si hay valores nulos en 'product_category'
+print(f"Valores nulos en 'product_category': {df['product_category'].isnull().sum()}")
 
-# Categorías con alta probabilidad de devolución (usando media + desviación estándar)
-high_return_categories = category_review_stats[
-    category_review_stats['low_review_rate'] > (mean_low_review_rate + std_low_review_rate)
-]['product_category'].tolist()
+# Si hay valores nulos, eliminarlos o rellenarlos
+df = df.dropna(subset=['product_category'])  # Elimina filas con valores nulos en 'product_category'
 
-# Función para calcular la clase binomial de devolución del producto
-def calculate_product_return_class(product_category, review_score, freight_value, order_price):
-    freight_ratio = freight_value / max(order_price, 1)  # Evitar divisiones por cero
+# --- 1. Etiquetado de 'product_return_class' ---
+
+# Variables que afectan la probabilidad de devolución
+def calculate_product_return_class(row):
+    product_category = row['product_category']
+    review_score = row['review_score']
+    freight_value = row['freight_value']
+    order_price = row['order_price']
+    product_price = row['product_price']
+    product_volume = row['product_volume']
+    product_brand = row['product_brand']
+
+    # Cálculo de la probabilidad de devolución
     return_score = 0
 
-    # Categoría
+    # Si el producto tiene una categoría con altas devoluciones
     if product_category in high_return_categories:
-        return_score += 3  # Más peso para categorías problemáticas
-    else:
-        return_score += 1
-
-    # Reseña
-    if review_score < 2:  # Más peso para reseñas muy bajas
-        return_score += 3
-    elif review_score < 3:
         return_score += 2
     else:
         return_score += 1
 
-    # Relación costo-precio
-    if freight_ratio > 0.6:  # Umbral más alto para fletes muy caros
-        return_score += 3
-    elif freight_ratio > 0.4:
+    # Ajustar la influencia del review_score
+    if review_score <= 2:  # Ajuste para equilibrar
         return_score += 2
+    elif review_score <= 4:
+        return_score += 1
     else:
+        return_score += 0
+
+    # Si el precio del producto es alto, puede haber más probabilidad de devolución
+    if product_price > 1.5:  # Supongamos que un producto muy caro tiene más chances de devolución
         return_score += 1
 
-    # Agregar un componente aleatorio pequeño para evitar determinismo total
-    random_component = np.random.uniform(-0.5, 0.5)
-    return_score += random_component
+    # El valor del envío influye en la probabilidad de devolución
+    if freight_value > 0.5:  # Si el coste de envío es alto, aumenta la probabilidad de devolución
+        return_score += 1
 
-    # Clasificación final binaria
-    if return_score >= 6:  # Ajustar el umbral según las nuevas ponderaciones
+    # Volumen del producto también influye: productos grandes pueden ser más difíciles de devolver
+    if product_volume > 0.5:
+        return_score += 1
+
+    # Si la marca tiene historial de devoluciones, podría aumentar la probabilidad
+    if product_brand in high_return_brands:
+        return_score += 1
+
+    # Umbral de decisión ajustado para no ser tan estricto
+    if return_score >= 6:
         return "Alta Probabilidad"
     else:
         return "Baja Probabilidad"
 
-# Aplicar la función al DataFrame
-df['product_return_class'] = df.apply(
-    lambda row: calculate_product_return_class(
-        row['product_category'], row['review_score'], 
-        row['freight_value'], row['order_price']
-    ),
-    axis=1
-)
+# Definimos las categorías y marcas con altas probabilidades de devolución (esto puede ser determinado con análisis previo)
+high_return_categories = ['agriculture_industry_and_trade', 'arts_and_crafts', 'construction_tools_safety', 'dvds_blu_ray', 'fashion_mens_clothing', 'fashion_underwear_and_beachwear', 'fashion_womens_clothing', 'fixed_telephony', 'home_appliances', 'home_appliances_2', 'insurance_and_services', 'kitchen', 'kitchen_service_area_dining_and_garden_furniture', 'music', 'musical_instruments', 'party_supplies', 'pcs', 'portable_appliances', 'portable_kitchen_food_preparers']
 
-# --- ETIQUETADO PARA satisfaction_class_binomial ---
+high_return_brands = ['Alfatec', 'Amaro', 'Amazon', 'Americanas', 'Aorus', 'Aquarela', 'Aramis', 'BalÃµes SÃ£o Roque', 'Black+Decker', 'Book Depository', 'Bradesco Seguros', 'BritÃ¢nia', 'Canson', 'CantÃ£o', 'Consul', 'Delta Plus', 'Epson', 'Farm', 'Festas e Fantasias','Gerdau', 'Giannini', 'Gigaset', 'GoPro', 'Grendene', 'Grupo A', 'HP', 'Honeywell', 'Le Lis Blanc', 'Lenovo', 'Lilica Ripilica', 'Logitech', 'Mapfre', 'Massey Ferguson', 'Midea', 'New Holland', 'Nike', 'Nikon', 'Osram', 'Oster', 'Paramount', 'Razer', 'Regina Festas', 'Reserva', 'Richards', 'Santino', 'Shelter', 'Simmons', 'Sony Music', 'Sony Pictures', 'Springer', 'Tagima', 'Umbro', 'Uniflores', 'VR', 'Valtra', 'WAP', 'Warner Bros', 'Warner Music', 'Yamaha']
 
-# Función para calcular la clase binomial de satisfacción del cliente
-def calculate_satisfaction_class(review_score):
-    return "Satisfecho" if review_score >= 4 else "No Satisfecho"
+df['product_return_class'] = df.apply(calculate_product_return_class, axis=1)
 
-# Aplicar la lógica al DataFrame
-df['satisfaction_class_binomial'] = df['review_score'].apply(calculate_satisfaction_class)
+# --- 2. Etiquetado de 'satisfaction_class_binomial' ---
+def calculate_satisfaction_class(row):
+    review_score = row['review_score']
 
-# --- GUARDAR EL DATASET PROCESADO ---
+    # Lógica de satisfacción: si el review_score es mayor o igual a 4, es "Satisfecho"
+    if review_score >= 4:
+        return "Satisfecho"
+    else:
+        return "No Satisfecho"
 
-# Guardar el dataset procesado con las nuevas etiquetas
+df['satisfaction_class_binomial'] = df.apply(calculate_satisfaction_class, axis=1)
+
+# --- 3. Guardar el dataset procesado ---
 df.to_csv("reviews_binomial.csv", sep=";", index=False)
 
-# Mostrar el conteo de clases para verificar balance
+# --- 4. Verificar el balance de clases ---
 print("Conteo de Clases de Retorno del Producto (Binomial):")
 print(df['product_return_class'].value_counts())
+
 print("\nConteo de Clases de Satisfacción del Cliente (Binomial):")
 print(df['satisfaction_class_binomial'].value_counts())
