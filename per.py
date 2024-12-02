@@ -1,101 +1,57 @@
-import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+import pandas as pd
+from sklearn.model_selection import train_test_split
 
-# Cargar el dataset con el delimitador correcto (punto y coma)
+# Leer el CSV
 df = pd.read_csv('reviews_binomial.csv', sep=';')
 
-# Mapear los meses a valores numéricos (enero=1, febrero=2, ..., diciembre=12)
-month_mapping = {
-    'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4, 'mayo': 5, 'junio': 6,
-    'julio': 7, 'agosto': 8, 'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12
-}
+# Seleccionar una muestra de 5000 registros aleatorios
+df_sampled = df.sample(n=5000, random_state=42)
 
-# Convertir las columnas de texto a valores numéricos
-df['order_month'] = df['order_month'].map(month_mapping)
-df['order_year'] = pd.to_numeric(df['order_year'], errors='coerce')
-df['order_day'] = df['order_day'].map({
-    'lunes': 1, 'martes': 2, 'miércoles': 3, 'jueves': 4, 'viernes': 5, 'sábado': 6, 'domingo': 7
-})
+# Seleccionar las columnas relevantes para el modelo (todas las 4 características para el entrenamiento)
+X = df_sampled[['review_score', 'order_price', 'product_price', 'freight_value']].values
+y = df_sampled['satisfaction_class_binomial'].map({'Satisfecho': 1, 'No Satisfecho': 0}).values
 
-# Aplicar One-Hot Encoding a las columnas categóricas
-df_encoded = pd.get_dummies(df, columns=['product_category', 'product_brand'])
+# Dividir el conjunto de datos en entrenamiento y test (80% entrenamiento, 20% test)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Convertir las columnas booleanas a enteros
-df_encoded = df_encoded.astype({col: 'int' for col in df_encoded.columns if df_encoded[col].dtype == 'bool'})
+# Inicialización de pesos (empezamos en 0)
+weights = np.zeros(X_train.shape[1])
+bias = 0
 
-# Filtrar las clases 'Satisfecho' y 'No Satisfecho'
-df_satisfecho = df_encoded[df_encoded['satisfaction_class_binomial'] == 'Satisfecho']
-df_no_satisfecho = df_encoded[df_encoded['satisfaction_class_binomial'] == 'No Satisfecho']
+# Definir el umbral (hardlim) para la activación
+hardlim = 0.5
 
-# Tomar 2000 ejemplos aleatorios de cada clase
-df_satisfecho_sampled = df_satisfecho.sample(n=2000, random_state=42)
-df_no_satisfecho_sampled = df_no_satisfecho.sample(n=2000, random_state=42)
+# Función de activación
+def activation_function(x):
+    return 1 if x >= hardlim else 0
 
-# Concatenar las dos clases para obtener el dataset balanceado
-df_balanced = pd.concat([df_satisfecho_sampled, df_no_satisfecho_sampled])
-df_balanced = df_balanced.reset_index(drop=True)
+# Entrenamiento del perceptrón con vectorización
+learning_rate = 0.1
+epochs = 10  # Reducir las épocas para acelerar la prueba
 
-# Seleccionar las características y la etiqueta
-X = df_balanced[['review_score', 'order_price'] + 
-                [col for col in df_encoded.columns if 'product_category_' in col or 'product_brand_' in col]].values
-y = np.where(df_balanced['satisfaction_class_binomial'] == 'Satisfecho', 1, -1)
-
-# Inicialización de los pesos y el sesgo
-w = np.zeros(X.shape[1])
-b = 0
-alpha = 0.01  # Tasa de aprendizaje
-epochs = 100  # Reducir las épocas para acelerar la ejecución
-
-# Función de activación vectorizada
-def sign_activation(z):
-    return np.where(z >= 0, 1, -1)
-
-# Entrenamiento del Perceptrón (Vectorizado)
 for epoch in range(epochs):
-    # Calcular la salida (z) y la predicción (y_hat)
-    z = np.dot(X, w) + b
-    y_hat = sign_activation(z)
+    # Calculamos la salida del perceptrón para todo el conjunto de entrenamiento
+    net_input = np.dot(X_train, weights) + bias
+    predictions = np.where(net_input >= hardlim, 1, 0)
+    
+    # Calculamos el error y actualizamos los pesos y sesgo
+    error = y_train - predictions
+    weights += learning_rate * np.dot(X_train.T, error)  # Actualización vectorizada
+    bias += learning_rate * np.sum(error)  # Actualización sesgo vectorizada
 
-    # Encontrar los índices donde la predicción es incorrecta
-    errors = y != y_hat
-    if not np.any(errors):  # Si no hay errores, detener el entrenamiento
-        break
+# Calcular el Error de Entrenamiento
+net_input_train = np.dot(X_train, weights) + bias
+predictions_train = np.where(net_input_train >= hardlim, 1, 0)
+training_error = np.mean(predictions_train != y_train) * 100  # Error de entrenamiento en porcentaje
 
-    # Actualizar los pesos y el sesgo para las muestras mal clasificadas
-    w += alpha * np.dot(errors * y, X)
-    b += alpha * np.sum(errors * y)
+# Evaluar el modelo con los pesos entrenados para test
+net_input_test = np.dot(X_test, weights) + bias
+predictions_test = np.where(net_input_test >= hardlim, 1, 0)
+test_error = np.mean(predictions_test != y_test) * 100  # Error de test en porcentaje
 
-# Resultados del entrenamiento
-print("Pesos finales:", w)
-print("Sesgo final:", b)
-
-# Evaluación
-z_test = np.dot(X, w) + b
-y_test_hat = sign_activation(z_test)
-accuracy = np.mean(y_test_hat == y) * 100
-print(f'Precisión del modelo: {accuracy:.2f}%')
-
-# Graficar la línea de decisión
-plt.figure(figsize=(8, 6))
-
-# Mostrar las predicciones y las etiquetas
-plt.scatter(X[:, 0], X[:, 1], c=y, cmap='coolwarm', marker='o', label='Datos Reales', alpha=0.5)
-
-# Graficar la línea de decisión
-x_min, x_max = X[:, 0].min() - 1, X[:, 0].max() + 1
-y_min, y_max = X[:, 1].min() - 1, X[:, 1].max() + 1
-xx, yy = np.meshgrid(np.arange(x_min, x_max, 0.1), np.arange(y_min, y_max, 0.1))
-Z = sign_activation(np.dot(np.c_[xx.ravel(), yy.ravel()], w[:2]) + b)  # Usando solo las dos primeras características
-
-# Cambiar la forma de Z para que coincida con la forma de los datos en el meshgrid
-Z = Z.reshape(xx.shape)
-
-# Graficar la frontera de decisión
-plt.contourf(xx, yy, Z, alpha=0.3, cmap='coolwarm')
-plt.title('Frontera de Decisión del Perceptrón')
-plt.xlabel('Review Score')
-plt.ylabel('Order Price')
-
-plt.show()
+# Mostrar precisión y errores
+print(f'Error de Entrenamiento: {training_error:.2f}%')
+print(f'Error de Testeo: {test_error:.2f}%')
+print(f'Pesos finales: {weights}')
+print(f'Sesgo final: {bias}')

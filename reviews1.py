@@ -70,7 +70,7 @@ def calculate_product_return_class(row):
     else:
         return "Baja Probabilidad"
 
-# Definimos las categorías y marcas con altas probabilidades de devolución (esto puede ser determinado con análisis previo)
+# Definimos las categorías y marcas con altas probabilidades de devolución 
 high_return_categories = ['agriculture_industry_and_trade', 'arts_and_crafts', 'construction_tools_safety', 'dvds_blu_ray', 'fashion_mens_clothing', 'fashion_underwear_and_beachwear', 'fashion_womens_clothing', 'fixed_telephony', 'home_appliances', 'home_appliances_2', 'insurance_and_services', 'kitchen', 'kitchen_service_area_dining_and_garden_furniture', 'music', 'musical_instruments', 'party_supplies', 'pcs', 'portable_appliances', 'portable_kitchen_food_preparers']
 
 high_return_brands = ['Alfatec', 'Amaro', 'Amazon', 'Americanas', 'Aorus', 'Aquarela', 'Aramis', 'BalÃµes SÃ£o Roque', 'Black+Decker', 'Book Depository', 'Bradesco Seguros', 'BritÃ¢nia', 'Canson', 'CantÃ£o', 'Consul', 'Delta Plus', 'Epson', 'Farm', 'Festas e Fantasias','Gerdau', 'Giannini', 'Gigaset', 'GoPro', 'Grendene', 'Grupo A', 'HP', 'Honeywell', 'Le Lis Blanc', 'Lenovo', 'Lilica Ripilica', 'Logitech', 'Mapfre', 'Massey Ferguson', 'Midea', 'New Holland', 'Nike', 'Nikon', 'Osram', 'Oster', 'Paramount', 'Razer', 'Regina Festas', 'Reserva', 'Richards', 'Santino', 'Shelter', 'Simmons', 'Sony Music', 'Sony Pictures', 'Springer', 'Tagima', 'Umbro', 'Uniflores', 'VR', 'Valtra', 'WAP', 'Warner Bros', 'Warner Music', 'Yamaha']
