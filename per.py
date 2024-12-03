@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold
-from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder, MinMaxScaler
 from sklearn.metrics import accuracy_score
 
 # Leer el CSV
@@ -20,13 +20,21 @@ encoded_columns = encoded_columns.toarray()
 # Combinar las variables numéricas con las codificadas
 X = np.hstack((X[['review_score', 'freight_value']].values, encoded_columns))
 
+# Normalización de las características numéricas (review_score y freight_value)
+scaler = MinMaxScaler()
+X_numeric = X[:, :2]  # Las primeras dos columnas son las características numéricas
+X_numeric_scaled = scaler.fit_transform(X_numeric)
+
+# Reemplazar las columnas numéricas escaladas en X
+X[:, :2] = X_numeric_scaled
+
 # Etiquetas
 y = df['satisfaction_class_binomial'].map({'Satisfecho': 1, 'No Satisfecho': 0}).values
 
 # Inicialización de los parámetros
-learning_rate = 0.1
-epochs = 1000
-hardlim = 0.5
+learning_rate = 0.001  # Ajustar la tasa de aprendizaje para evitar saltar el mínimo
+epochs = 1000  # Mantener las 1000 épocas
+hardlim = 0.5  # Para la función de activación hardlim
 
 # Inicializar la validación cruzada estratificada con 5 folds
 skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
@@ -53,13 +61,13 @@ for fold, (train_index, test_index) in enumerate(skf.split(X, y), 1):
             print(f"Epoch {epoch} - Predicciones: {np.where(np.dot(X_train, weights) + bias >= hardlim, 1, 0)[:5]} | Pesos: {weights[:5]} | Sesgo: {bias:.2f}")
         
         # Calculamos la salida del perceptrón para todo el conjunto de entrenamiento
-        net_input = np.dot(X_train, weights) + bias
-        predictions = (net_input >= hardlim).astype(int)
+        net_input = np.dot(X_train, weights) + bias  # Fórmula del perceptrón
+        predictions = (net_input >= hardlim).astype(int)  # Salida discreta usando hardlim
         
         # Calculamos el error y actualizamos los pesos y sesgo
         error = y_train - predictions
-        weights += learning_rate * np.dot(X_train.T, error)
-        bias += learning_rate * np.sum(error)
+        weights += learning_rate * np.dot(X_train.T, error)  # Actualización de pesos (fórmula explícita)
+        bias += learning_rate * np.sum(error)  # Actualización del sesgo (fórmula explícita)
     
     # Calcular el Error de Entrenamiento para este fold
     net_input_train = np.dot(X_train, weights) + bias
