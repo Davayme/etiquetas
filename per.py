@@ -8,17 +8,17 @@ from sklearn.metrics import accuracy_score
 df = pd.read_csv('reviews_binomial.csv', sep=';')
 
 # Seleccionar las columnas relevantes para el modelo
-X = df[['review_score', 'order_price', 'product_price', 'freight_value', 'product_category', 'product_brand']]
+X = df[['review_score', 'freight_value', 'customer_city_name', 'order_month']]
 
 # One-Hot Encoding de las columnas categóricas
 encoder = OneHotEncoder()
-encoded_columns = encoder.fit_transform(X[['product_category', 'product_brand']])
+encoded_columns = encoder.fit_transform(X[['customer_city_name', 'order_month']])
 
 # Convertir la matriz dispersa a una matriz densa
 encoded_columns = encoded_columns.toarray()
 
 # Combinar las variables numéricas con las codificadas
-X = np.hstack((X[['review_score', 'order_price', 'product_price', 'freight_value']].values, encoded_columns))
+X = np.hstack((X[['review_score', 'freight_value']].values, encoded_columns))
 
 # Etiquetas
 y = df['satisfaction_class_binomial'].map({'Satisfecho': 1, 'No Satisfecho': 0}).values
