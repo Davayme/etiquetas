@@ -108,6 +108,7 @@ class EvaluacionModelo:
         self.errores_test = []
         self.kf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
         self.pesos_mejor_fold = None
+        self.sesgo_mejor_fold = None
         self.error_mejor_fold = float('inf')
 
     def evaluar(self):
@@ -137,10 +138,11 @@ class EvaluacionModelo:
             print(f"** Fin del Fold {fold} **")
             print(f"Error de Entrenamiento: {error_train:.2f}% | Error de Testeo: {error_test:.2f}%")
 
-            # Guardar los pesos del mejor fold basado en el error de testeo
+            # Guardar los pesos y sesgo del mejor fold basado en el error de testeo
             if error_test < self.error_mejor_fold:
                 self.error_mejor_fold = error_test
                 self.pesos_mejor_fold = self.modelo.pesos.copy()
+                self.sesgo_mejor_fold = self.modelo.sesgo
 
         # Promediar los errores de los 5 folds
         error_train_promedio = np.mean(self.errores_entrenamiento)
@@ -150,20 +152,96 @@ class EvaluacionModelo:
         print(f"Error de Testeo promedio: {error_test_promedio:.2f}%")
 
         # Imprimir los pesos del mejor fold
-        print("\n** Pesos del mejor Fold (con el menor error de testeo) **")
+        print("\n** Pesos y Sesgo del mejor Fold (con el menor error de testeo) **")
         print(f"Pesos: {self.pesos_mejor_fold}")
+        print(f"Sesgo: {self.sesgo_mejor_fold}")
 
-    def graficar_frontera_decision(self):
+class GeneradorDatosSinteticos:
+    def __init__(self, n_muestras=3000):
         """
-        Función vacía para graficar la frontera de decisión. Completar con la lógica según sea necesario.
+        Inicializa el generador de datos sintéticos.
         """
-        pass
+        self.n_muestras = n_muestras
+        self.X = None
+        self.y = None
 
-    def graficar_otro(self):
+    def generar_datos(self):
         """
-        Función vacía para graficar otro tipo de gráfico. Completar con la lógica según sea necesario.
+        Genera datos sintéticos normalizados con algo de ruido para simular datos reales.
         """
-        pass
+        # Generar datos con cierta estructura para simular patrones reales
+        review_scores = np.concatenate([
+            np.random.normal(0.8, 0.15, self.n_muestras // 2),  # Cluster de alta satisfacción
+            np.random.normal(0.3, 0.15, self.n_muestras // 2)   # Cluster de baja satisfacción
+        ])
+        
+        freight_values = np.concatenate([
+            np.random.normal(0.4, 0.2, self.n_muestras // 2),   # Valores de envío para alta satisfacción
+            np.random.normal(0.6, 0.2, self.n_muestras // 2)    # Valores de envío para baja satisfacción
+        ])
+        
+        # Clipear valores para mantenerlos entre 0 y 1
+        review_scores = np.clip(review_scores, 0, 1)
+        freight_values = np.clip(freight_values, 0, 1)
+        
+        # Agregar ruido aleatorio adicional
+        ruido = np.random.normal(0, 0.1, (self.n_muestras, 2))
+        
+        # Combinar en matriz X
+        self.X = np.column_stack((review_scores, freight_values)) + ruido
+        self.X = np.clip(self.X, 0, 1)  # Asegurar que los valores finales estén entre 0 y 1
+        
+        return self.X
+
+    def clasificar_datos(self, pesos, sesgo, umbral=0.5):
+        """
+        Clasifica los datos usando los pesos y sesgo proporcionados.
+        """
+        pesos_reducidos = pesos[:2]
+        entrada_neta = np.dot(self.X, pesos_reducidos) + sesgo
+        return (entrada_neta >= umbral).astype(int)
+
+    def visualizar_clasificacion(self, y_pred, pesos, sesgo, titulo="Clasificación de Datos Sintéticos"):
+        """
+        Visualiza la clasificación de los datos y la frontera de decisión.
+        """
+        plt.figure(figsize=(12, 8))
+        
+        # Graficar puntos clasificados
+        puntos_satisfechos = self.X[y_pred == 1]
+        puntos_no_satisfechos = self.X[y_pred == 0]
+        
+        plt.scatter(puntos_satisfechos[:, 0], puntos_satisfechos[:, 1], 
+                   c='green', label='Satisfecho', alpha=0.5)
+        plt.scatter(puntos_no_satisfechos[:, 0], puntos_no_satisfechos[:, 1], 
+                   c='red', label='No Satisfecho', alpha=0.5)
+        
+        # Dibujar la frontera de decisión
+        x_min, x_max = self.X[:, 0].min() - 0.1, self.X[:, 0].max() + 0.1
+        y_min, y_max = self.X[:, 1].min() - 0.1, self.X[:, 1].max() + 0.1
+        xx, yy = np.meshgrid(np.linspace(x_min, x_max, 100),
+                            np.linspace(y_min, y_max, 100))
+        
+        # Obtener los pesos para las dos primeras características
+        w1, w2 = pesos[:2]
+        
+        # La ecuación de la frontera de decisión es: w1*x + w2*y + sesgo = 0
+        # Reorganizando para y: y = -(w1*x + sesgo)/w2
+        Z = -(w1 * xx + sesgo) / w2
+        
+        plt.plot(xx[0], Z[0], 'b-', label='Frontera de decisión')
+        
+        plt.xlabel('Review Score (Normalizado)')
+        plt.ylabel('Freight Value (Normalizado)')
+        plt.title(titulo)
+        plt.legend()
+        plt.grid(True)
+        
+        # Ajustar los límites del gráfico
+        plt.xlim(x_min, x_max)
+        plt.ylim(y_min, y_max)
+        
+        plt.show()
 
 # Código Principal
 if __name__ == "__main__":
@@ -177,3 +255,10 @@ if __name__ == "__main__":
     # Paso 3: Evaluar el modelo
     evaluador = EvaluacionModelo(perceptron, X, y)
     evaluador.evaluar()
+
+    # Paso 4: Generar y visualizar datos sintéticos
+    print("\n** Generando y visualizando datos sintéticos **")
+    generador = GeneradorDatosSinteticos(n_muestras=3000)
+    X_sintetico = generador.generar_datos()
+    y_pred = generador.clasificar_datos(evaluador.pesos_mejor_fold, evaluador.sesgo_mejor_fold)
+    generador.visualizar_clasificacion(y_pred, evaluador.pesos_mejor_fold, evaluador.sesgo_mejor_fold)
