@@ -101,9 +101,9 @@ class RegresionLogistica:
         print(f"Error promedio de prueba: {error_prueba_promedio:.4f}")
 
 class LogisticRegressionViz(RegresionLogistica):
-    def __init__(self, df, sample_size=200000):
-        super().__init__(df)
-        self.sample_size = min(sample_size, len(df))
+    def __init__(self, datos, sample_size=200000):
+        super().__init__(datos)
+        self.sample_size = min(sample_size, len(datos))
         
     def visualizar_frontera(self):
         # Preparar los datos
@@ -133,9 +133,6 @@ class LogisticRegressionViz(RegresionLogistica):
         plt.xlabel('t-SNE Componente 1')
         plt.ylabel('t-SNE Componente 2')
         
-        # Agregar leyenda
-        plt.legend(['No Satisfecho', 'Satisfecho'])
-        
         # Mostrar el gráfico
         plt.show()
         
@@ -145,6 +142,12 @@ class LogisticRegressionViz(RegresionLogistica):
         print(f"Satisfechos: {sum(y_sample == 1)} ({sum(y_sample == 1)/len(y_sample)*100:.2f}%)")
         print(f"No Satisfechos: {sum(y_sample == 0)} ({sum(y_sample == 0)/len(y_sample)*100:.2f}%)")
 
+# Leer los datos
 datos = pd.read_csv('reviews_binomial.csv', sep=';')
-modelo = RegresionLogistica(datos)
+
+# Crear el modelo y entrenarlo
+modelo = LogisticRegressionViz(datos)
 modelo.regresion_logistica(tasa_aprendizaje=0.75)
+
+# Visualizar la frontera
+modelo.visualizar_frontera()
