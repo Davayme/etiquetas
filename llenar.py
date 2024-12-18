@@ -108,35 +108,32 @@ def generate_review_and_shipping(category, shipping_time, distance, month, produ
         review_penalty = 0
 
     # Ajuste de reseña basado en el tiempo de envío
-    if delay_ratio <= 1.2:
-        review = np.random.choice([3, 4, 5], p=[0.2, 0.4, 0.4])  # Más balanceado
-    elif delay_ratio > 2:
-        review = np.random.choice([1, 2, 3], p=[0.5, 0.3, 0.2])  # Más negativo para retrasos largos
-    else:
-        review = np.random.choice([2, 3, 4], p=[0.3, 0.4, 0.3])  # Distribución más centrada
+    if delay_ratio <= 1.2:  # Entrega a tiempo
+        review = np.random.choice([3, 4, 5], p=[0.20, 0.40, 0.40])  # Más positivo
+    elif delay_ratio > 2:  # Gran retraso
+        review = np.random.choice([1, 2, 3], p=[0.20, 0.40, 0.40])  # Menos negativo
+    else:  # Retraso moderado
+        review = np.random.choice([2, 3, 4], p=[0.20, 0.50, 0.30])  # Más neutral
 
-    # Penalizaciones más fuertes
+    # Penalizaciones más suaves
+    penalty = 0
+    
     if shipping_to_price_ratio > 0.2:
-        review_penalty = 1.0  # Aumentar penalización por envío caro
-    elif shipping_to_price_ratio > 0.1:
-        review_penalty = 0.5
-    else:
-        review_penalty = 0
+        penalty += np.random.choice([0, 1], p=[0.7, 0.3])  # 30% probabilidad de penalización
+    
+    if base_price > 2000:  # Solo precios muy altos
+        penalty += np.random.choice([0, 1], p=[0.8, 0.2])  # 20% probabilidad
 
-    # Penalización adicional por precio alto
-    if base_price > 1000:
-        review_penalty += 0.5
-
-    # Penalización por temporada alta (más quejas en fechas festivas)
     if month in [11, 12]:
-        review_penalty += np.random.choice([0, 0.5], p=[0.7, 0.3])
+        penalty += np.random.choice([0, 1], p=[0.9, 0.1])  # 10% probabilidad
 
-    # Penalización por distancia larga
-    if distance > 1000:
-        review_penalty += 0.5
+    if distance > 2000:  # Solo distancias muy largas
+        penalty += np.random.choice([0, 1], p=[0.8, 0.2])  # 20% probabilidad
 
-    review_score = max(1, min(5, np.round(review - review_penalty, 2)))
-    return np.round(price, 2), np.round(base_discount, 2), review_score
+    # Asegurar review entre 1 y 5
+    review_score = max(1, min(5, review - penalty))
+    
+    return np.round(price, 2), np.round(base_discount, 2), int(review_score)
 
 # Generación de datos base
 data = {

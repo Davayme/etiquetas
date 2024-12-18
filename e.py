@@ -32,24 +32,19 @@ def create_seller_quality_label(df):
     Crea una etiqueta de calidad del vendedor basada en múltiples métricas
     Returns: 0 (Bajo Desempeño), 1 (Desempeño Regular), 2 (Alto Desempeño)
     """
-    # Asegurar que los valores están en el rango correcto
     seller_response_time = np.clip(df['seller_response_time'], 0, 48)
     shipping_time_days = np.clip(df['shipping_time_days'], 0, 31)
     review_score = np.clip(df['review_score'], 1, 5)
     customer_complaints = np.clip(df['customer_complaints'], 0, 5)
     
     seller_score = (
-        # Tiempo de respuesta normalizado (invertido porque menor es mejor)
         (48 - seller_response_time) / 48 * 25 +
-        # Review score normalizado
         (review_score / 5) * 25 +
-        # Tiempo de envío normalizado (invertido porque menor es mejor)
         (31 - shipping_time_days) / 31 * 25 +
-        # Quejas normalizadas (invertido porque menor es mejor)
         (5 - customer_complaints) / 5 * 25
     )
     
-    # Crear etiquetas basadas en percentiles
+    # Etiquetar con percentiles ajustados para una distribución más balanceada
     return pd.qcut(seller_score, q=3, labels=[0, 1, 2])
 
 def create_customer_satisfaction_label(df):
@@ -57,23 +52,17 @@ def create_customer_satisfaction_label(df):
     Crea una etiqueta de satisfacción del cliente basada en la experiencia completa
     Returns: 0 (Insatisfecho), 1 (Neutral), 2 (Satisfecho)
     """
-    # Calcular tiempo de entrega esperado basado en la distancia
     expected_delivery_time = df.apply(lambda row: 
         max(1, calculate_distance(row['seller_region'], row['customer_region']) / 100), axis=1)
     
-    # Calcular retraso en la entrega
     delivery_delay = df['shipping_time_days'] - expected_delivery_time
-    
-    # Calcular relación precio-descuento
     price_value = (df['order_price'] * (1 - df['product_discount']/100)) / df['order_price']
     
-    # Normalizar y clipear valores
     review_score_norm = np.clip(df['review_score'] / 5, 0, 1)
     complaints_norm = np.clip((5 - df['customer_complaints']) / 5, 0, 1)
     delivery_delay_norm = 1 - np.clip(delivery_delay / 30, 0, 1)
     response_time_norm = 1 - np.clip(df['seller_response_time'] / 48, 0, 1)
     
-    # Score de satisfacción compuesto
     satisfaction_score = (
         review_score_norm * 35 +
         complaints_norm * 25 +
@@ -82,9 +71,9 @@ def create_customer_satisfaction_label(df):
         price_value * 10
     )
     
-    # Crear etiquetas usando umbrales específicos
+    # Ajustar los umbrales para una distribución más balanceada
     return pd.cut(satisfaction_score, 
-                 bins=[-np.inf, 30, 60, np.inf],  # Ajusté los umbrales
+                 bins=[-np.inf, 20, 60, np.inf],  # Ajusté los umbrales
                  labels=[0, 1, 2])
 
 def label_dataset(df):
@@ -92,44 +81,30 @@ def label_dataset(df):
     Etiqueta el dataset con seller_quality y customer_satisfaction de manera más balanceada
     pero manteniendo distribuciones realistas.
     """
-    # Copiar el dataframe para no modificar el original
     df = df.copy()
     
-    # Etiquetado de seller_quality (0: bajo, 1: medio, 2: alto)
+    # Etiquetado de seller_quality
     def calculate_seller_quality(row):
         score = 0
-        
-        # Factor de respuesta del vendedor (0-20)
         response_score = max(0, (48 - row['seller_response_time']) / 48 * 20)
-        
-        # Factor de quejas (-20-0)
         complaint_score = max(-20, -4 * row['customer_complaints'])
-        
-        # Factor de tiempo de envío (0-20)
         shipping_score = max(0, (15 - row['shipping_time_days']) / 15 * 20)
-        
-        # Factor de stock (0-20)
         stock_score = min(20, row['inventory_stock_level'] / 25)
-        
-        # Factor de precio-descuento (0-20)
         price_score = min(20, (row['product_discount'] / row['order_price']) * 100)
         
-        # Suma total de factores
         total_score = response_score + complaint_score + shipping_score + stock_score + price_score
         
-        # Clasificación más balanceada (ajusté las proporciones)
-        if total_score < 50:  # ~50%
+        # Cambié los umbrales para equilibrar la distribución
+        if total_score < 50:
             return 1
-        elif total_score < 70:  # ~30%
+        elif total_score < 70:
             return 0
-        else:  # ~20%
+        else:
             return 2
     
-    # Etiquetado de customer_satisfaction (0: insatisfecho, 1: neutral, 2: satisfecho)
+    # Etiquetado de customer_satisfaction
     def calculate_customer_satisfaction(row):
         score = 0
-        
-        # Base en review_score
         review_weight = {
             1: -30,
             2: -15,
@@ -138,39 +113,34 @@ def label_dataset(df):
             5: 30
         }
         score += review_weight[row['review_score']]
-        
-        # Factor de quejas
         score -= row['customer_complaints'] * 10
         
-        # Factor de tiempo de envío
         expected_time = max(1, geodesic(
             region_coordinates[row['seller_region']], 
             region_coordinates[row['customer_region']]).kilometers / 100)
         delivery_ratio = row['shipping_time_days'] / expected_time
         
-        if delivery_ratio > 2:  # Muy tardío
+        if delivery_ratio > 2:
             score -= 20
-        elif delivery_ratio > 1.5:  # Tardío
+        elif delivery_ratio > 1.5:
             score -= 10
-        elif delivery_ratio < 0.8:  # Rápido
+        elif delivery_ratio < 0.8:
             score += 10
-            
-        # Factor de precio-descuento
+        
         discount_ratio = (row['product_discount'] / row['order_price']) * 100
         if discount_ratio > 20:
             score += 10
         elif discount_ratio < 5:
             score -= 5
-            
-        # Clasificación más balanceada (ajusté las proporciones)
-        if score < -15:  # ~30%
+        
+        # Ajusté los umbrales
+        if score < -20:
             return 0
-        elif score < 15:  # ~40%
+        elif score < 10:
             return 1
-        else:  # ~30%
+        else:
             return 2
     
-    # Aplicar etiquetado
     df['seller_quality'] = df.apply(calculate_seller_quality, axis=1)
     df['customer_satisfaction'] = df.apply(calculate_customer_satisfaction, axis=1)
     
