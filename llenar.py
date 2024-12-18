@@ -74,7 +74,7 @@ region_weights = [0.43, 0.27, 0.08, 0.14, 0.08]
 def calculate_distance(origin_region, dest_region):
     return geodesic(region_coordinates[origin_region], region_coordinates[dest_region]).kilometers
 
-def generate_review_and_shipping(category, shipping_time, distance, month, product_price):
+def generate_review_and_shipping(category, shipping_time, distance, month, product_price, freight_value):
     # Precios base por categoría con correlación a demanda
     if category in ["Electronics", "Computing"]:
         base_price = np.random.uniform(200, 5000)
@@ -94,19 +94,49 @@ def generate_review_and_shipping(category, shipping_time, distance, month, produ
     # Ajuste de precio por distancia
     price = base_price * (1 + distance / 10000)
 
-    # Generación de review basado en tiempo de envío y distancia esperada
+    # Relación entre el precio del envío y el precio del producto
+    shipping_to_price_ratio = freight_value / price
+
+    # Ajustar el review basado en tiempo de entrega y relación precio-envío
     expected_time = max(1, distance / 100)  # Aseguramos que no sea 0
     delay_ratio = shipping_time / expected_time
 
-    # Ajustar el review basado en tiempo de entrega
-    if delay_ratio <= 1.2:
-        review = np.random.choice([4, 5], p=[0.3, 0.7])
-    elif delay_ratio > 2:
-        review = np.random.choice([1, 2, 3], p=[0.4, 0.4, 0.2])
+    # Penalización si el costo de envío es muy alto en comparación con el precio del producto
+    if shipping_to_price_ratio > 0.2:  # Si el costo del envío es más del 20% del precio del producto
+        review_penalty = 0.5  # Penalización en la reseña
     else:
-        review = np.random.choice([2, 3, 4], p=[0.2, 0.5, 0.3])
+        review_penalty = 0
 
-    return np.round(price, 2), np.round(base_discount, 2), review
+    # Ajuste de reseña basado en el tiempo de envío
+    if delay_ratio <= 1.2:
+        review = np.random.choice([3, 4, 5], p=[0.2, 0.4, 0.4])  # Más balanceado
+    elif delay_ratio > 2:
+        review = np.random.choice([1, 2, 3], p=[0.5, 0.3, 0.2])  # Más negativo para retrasos largos
+    else:
+        review = np.random.choice([2, 3, 4], p=[0.3, 0.4, 0.3])  # Distribución más centrada
+
+    # Penalizaciones más fuertes
+    if shipping_to_price_ratio > 0.2:
+        review_penalty = 1.0  # Aumentar penalización por envío caro
+    elif shipping_to_price_ratio > 0.1:
+        review_penalty = 0.5
+    else:
+        review_penalty = 0
+
+    # Penalización adicional por precio alto
+    if base_price > 1000:
+        review_penalty += 0.5
+
+    # Penalización por temporada alta (más quejas en fechas festivas)
+    if month in [11, 12]:
+        review_penalty += np.random.choice([0, 0.5], p=[0.7, 0.3])
+
+    # Penalización por distancia larga
+    if distance > 1000:
+        review_penalty += 0.5
+
+    review_score = max(1, min(5, np.round(review - review_penalty, 2)))
+    return np.round(price, 2), np.round(base_discount, 2), review_score
 
 # Generación de datos base
 data = {
@@ -127,21 +157,25 @@ data["freight_value"] = [max(5, d * 0.1 * w + np.random.normal(0, 5)) for d, w i
 
 # Generación de precios, descuentos y reseñas
 price_discount_review = [
-    generate_review_and_shipping(cat, st, d, m, p) 
-    for cat, st, d, m, p in zip(data["product_category"], data["shipping_time_days"], distances, data["order_month"], data["product_weight"])
+    generate_review_and_shipping(cat, st, d, m, p, f) 
+    for cat, st, d, m, p, f in zip(data["product_category"], data["shipping_time_days"], distances, data["order_month"], data["product_weight"], data["freight_value"])
 ]
 data["order_price"], data["product_discount"], data["review_score"] = zip(*price_discount_review)
 
 # Datos adicionales
 data["inventory_stock_level"] = np.random.randint(0, 501, size=num_rows)
+
+# Generación de tiempos de respuesta del vendedor más realistas
 data["seller_response_time"] = [
-    np.random.randint(1, 25) if region in ["Southeast", "South"]
-    else np.random.randint(1, 49)
+    np.random.randint(1, 13) if region in ["Southeast", "South"] else np.random.randint(1, 25)
     for region in data["seller_region"]
 ]
+
 data["customer_complaints"] = [
-    np.random.choice([0, 1, 2, 3, 4, 5], p=[0.8, 0.1, 0.05, 0.03, 0.01, 0.01]) if score >= 4
-    else np.random.choice([0, 1, 2, 3, 4, 5], p=[0.3, 0.3, 0.2, 0.1, 0.05, 0.05])
+    np.random.choice([0, 1, 2, 3, 4, 5], 
+                    p=[0.5, 0.2, 0.15, 0.1, 0.03, 0.02]) if score >= 4
+    else np.random.choice([0, 1, 2, 3, 4, 5], 
+                         p=[0.2, 0.3, 0.2, 0.15, 0.1, 0.05])
     for score in data["review_score"]
 ]
 

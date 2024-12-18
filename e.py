@@ -84,7 +84,7 @@ def create_customer_satisfaction_label(df):
     
     # Crear etiquetas usando umbrales específicos
     return pd.cut(satisfaction_score, 
-                 bins=[-np.inf, 40, 70, np.inf], 
+                 bins=[-np.inf, 30, 60, np.inf],  # Ajusté los umbrales
                  labels=[0, 1, 2])
 
 def label_dataset(df):
@@ -117,12 +117,12 @@ def label_dataset(df):
         # Suma total de factores
         total_score = response_score + complaint_score + shipping_score + stock_score + price_score
         
-        # Clasificación más balanceada
-        if total_score < 40:  # ~30%
-            return 0
-        elif total_score < 70:  # ~40%
+        # Clasificación más balanceada (ajusté las proporciones)
+        if total_score < 50:  # ~50%
             return 1
-        else:  # ~30%
+        elif total_score < 70:  # ~30%
+            return 0
+        else:  # ~20%
             return 2
     
     # Etiquetado de customer_satisfaction (0: insatisfecho, 1: neutral, 2: satisfecho)
@@ -145,8 +145,7 @@ def label_dataset(df):
         # Factor de tiempo de envío
         expected_time = max(1, geodesic(
             region_coordinates[row['seller_region']], 
-            region_coordinates[row['customer_region']]
-        ).kilometers / 100)
+            region_coordinates[row['customer_region']]).kilometers / 100)
         delivery_ratio = row['shipping_time_days'] / expected_time
         
         if delivery_ratio > 2:  # Muy tardío
@@ -163,12 +162,12 @@ def label_dataset(df):
         elif discount_ratio < 5:
             score -= 5
             
-        # Clasificación más balanceada
-        if score < -15:  # ~20%
+        # Clasificación más balanceada (ajusté las proporciones)
+        if score < -15:  # ~30%
             return 0
-        elif score < 15:  # ~30%
+        elif score < 15:  # ~40%
             return 1
-        else:  # ~50%
+        else:  # ~30%
             return 2
     
     # Aplicar etiquetado
@@ -208,5 +207,4 @@ if __name__ == "__main__":
         print("\nProceso de etiquetado completado exitosamente.")
         
     except Exception as e:
-        print(f"Error durante el proceso de etiquetado: {str(e)}")
         print(f"Error durante el proceso de etiquetado: {str(e)}")
