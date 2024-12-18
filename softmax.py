@@ -5,6 +5,7 @@ from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
 from sklearn.metrics import accuracy_score, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.manifold import TSNE
 
 # Cargar el dataset
 df = pd.read_csv('labeled_dataset.csv', delimiter=';')
@@ -89,6 +90,21 @@ def predecir(X, pesos, sesgos):
     y_pred = softmax(z)
     return np.argmax(y_pred, axis=1)
 
+# Agregar visualización de t-SNE
+def graficar_tsne(X, y, titulo="Proyección t-SNE"):
+    tsne = TSNE(n_components=2, random_state=42)
+    X_tsne = tsne.fit_transform(X)
+    
+    plt.figure(figsize=(8,6))
+    scatter = plt.scatter(X_tsne[:, 0], X_tsne[:, 1], c=y, cmap='viridis', alpha=0.7)
+    plt.title(titulo)
+    plt.xlabel('Componente 1')
+    plt.ylabel('Componente 2')
+    plt.legend(*scatter.legend_elements(), title="Clases")
+    plt.colorbar(scatter)
+    plt.show()
+
+
 # Validación cruzada estratificada
 cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 errores_entrenamiento = []
@@ -98,6 +114,9 @@ mejor_error_prueba = float('inf')
 mejor_pesos = None
 mejor_sesgos = None
 mejor_fold = -1
+
+mejor_X_train = None
+mejor_y_train_pred = None
 
 # Entrenamiento y evaluación con validación cruzada
 for fold, (train_idx, test_idx) in enumerate(cv.split(X_preprocesado, y), 1):
@@ -137,6 +156,8 @@ for fold, (train_idx, test_idx) in enumerate(cv.split(X_preprocesado, y), 1):
         mejor_pesos = pesos
         mejor_sesgos = sesgos
         mejor_fold = fold
+        mejor_X_train = X_train
+        mejor_y_train_pred = y_train_pred
     
     # Calcular la matriz de confusión
     cm = confusion_matrix(y_test, y_test_pred)
@@ -158,3 +179,5 @@ plt.title(f'Matriz de Confusión - Mejor Fold (Fold {mejor_fold})')
 plt.xlabel('Predicción')
 plt.ylabel('Real')
 plt.show()
+
+graficar_tsne(mejor_X_train, mejor_y_train_pred, titulo=f"Proyección t-SNE - Mejor Fold (Fold {mejor_fold})")
