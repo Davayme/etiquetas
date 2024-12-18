@@ -5,7 +5,7 @@ from geopy.distance import geodesic
 
 # Configuración básica
 np.random.seed(42)
-num_rows = 300_000
+num_rows = 327_190
 
 # Datos maestros
 categories = [

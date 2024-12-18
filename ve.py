@@ -2,77 +2,90 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from scipy import stats
 
-def verificar_dataset(filepath):
-    # Cargar datos
-    df = pd.read_csv(filepath, sep=';')
-    
-    # 1. Estadísticas básicas
-    print("\n=== Estadísticas Básicas ===")
-    print(df.describe())
-    print("\nValores faltantes:")
-    print(df.isnull().sum())
-    
-    # 2. Distribución de categorías
-    plt.figure(figsize=(15, 6))
-    df['product_category'].value_counts().plot(kind='bar')
-    plt.title('Distribución de Categorías')
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    plt.show()
-    
-    # 3. Matriz de correlación
-    numerical_cols = df.select_dtypes(include=[np.number]).columns
-    correlation_matrix = df[numerical_cols].corr()
-    
-    plt.figure(figsize=(12, 8))
-    sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt='.2f')
-    plt.title('Matriz de Correlación')
-    plt.tight_layout()
-    plt.show()
-    
-    # 4. Detección de outliers
-    print("\n=== Detección de Outliers ===")
-    for col in numerical_cols:
-        q1 = df[col].quantile(0.25)
-        q3 = df[col].quantile(0.75)
-        iqr = q3 - q1
-        outliers = df[(df[col] < q1 - 1.5*iqr) | (df[col] > q3 + 1.5*iqr)][col]
-        print(f"\n{col}: {len(outliers)} outliers ({(len(outliers)/len(df)*100):.2f}%)")
-    
-    # 5. Verificar balance de datos
+# Cargar el dataset
+df = pd.read_csv("synthetic_dataset.csv", sep=";")
+
+# 1. Estadísticas descriptivas
+print("Estadísticas descriptivas:")
+print(df.describe(include='all'))
+
+# 2. Revisión de valores nulos
+print("\nValores nulos en cada columna:")
+print(df.isnull().sum())
+
+# 3. Análisis de la distribución de variables numéricas
+numerical_columns = df.select_dtypes(include=[np.number]).columns.tolist()
+
+for col in numerical_columns:
     plt.figure(figsize=(10, 6))
-    df['review_score'].value_counts().plot(kind='bar')
-    plt.title('Distribución de Review Scores')
+    sns.histplot(df[col], kde=True, bins=50, color='skyblue')
+    plt.title(f'Distribución de {col}')
+    plt.xlabel(col)
+    plt.ylabel('Frecuencia')
     plt.show()
-    
-    # 6. Distribución geográfica
-    print("\n=== Distribución Geográfica ===")
-    print("\nVendedores por región:")
-    print(df['seller_region'].value_counts(normalize=True))
-    print("\nCompradores por región:")
-    print(df['customer_region'].value_counts(normalize=True))
-    
-    # 7. Verificar relaciones precio-categoría
-    plt.figure(figsize=(15, 6))
-    sns.boxplot(x='product_category', y='order_price', data=df)
-    plt.xticks(rotation=45)
-    plt.title('Distribución de Precios por Categoría')
-    plt.tight_layout()
-    plt.show()
-    
-    # 8. Análisis temporal
-    plt.figure(figsize=(12, 6))
-    df.groupby('order_month')['order_price'].mean().plot(kind='line')
-    plt.title('Precio Promedio por Mes')
-    plt.show()
-    
-    # 9. Test de normalidad
-    print("\n=== Test de Normalidad (Shapiro-Wilk) ===")
-    for col in numerical_cols[:5]:  # Limitamos a 5 columnas
-        stat, p = stats.shapiro(df[col].sample(min(1000, len(df))))
-        print(f"{col}: p-value = {p:.10f}")
 
-if __name__ == "__main__":
-    verificar_dataset("synthetic_dataset.csv")
+# 4. Correlación entre variables numéricas
+plt.figure(figsize=(12, 8))
+correlation_matrix = df[numerical_columns].corr()
+sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt='.2f', linewidths=0.5)
+plt.title('Matriz de correlación entre variables numéricas')
+plt.show()
+
+# 5. Análisis de la distribución de variables categóricas
+categorical_columns = df.select_dtypes(include=[np.object, 'category']).columns.tolist()
+
+for col in categorical_columns:
+    plt.figure(figsize=(10, 6))
+    sns.countplot(x=col, data=df, palette='Set2')
+    plt.title(f'Distribución de {col}')
+    plt.xlabel(col)
+    plt.ylabel('Frecuencia')
+    plt.xticks(rotation=45)
+    plt.show()
+
+# 6. Análisis de correlaciones específicas
+# Correlación entre "review_score" y otras variables
+print("\nCorrelaciones específicas con 'review_score':")
+review_correlations = df.corr()['review_score'].sort_values(ascending=False)
+print(review_correlations)
+
+# 7. Boxplots para ver posibles valores atípicos (outliers)
+for col in numerical_columns:
+    plt.figure(figsize=(10, 6))
+    sns.boxplot(x=df[col], color='lightcoral')
+    plt.title(f'Boxplot de {col}')
+    plt.xlabel(col)
+    plt.show()
+
+# 8. Análisis de la distribución de las categorías más frecuentes
+# Ver las categorías más comunes para 'product_category' y 'customer_region'
+print("\nFrecuencia de categorías más comunes en 'product_category':")
+print(df['product_category'].value_counts().head(10))
+
+print("\nFrecuencia de regiones más comunes en 'customer_region':")
+print(df['customer_region'].value_counts().head(10))
+
+# 9. Comprobación de sesgos en el precio y en las puntuaciones de reseñas
+plt.figure(figsize=(10, 6))
+sns.histplot(df['order_price'], kde=True, bins=50, color='orange')
+plt.title('Distribución de Order Price')
+plt.xlabel('Order Price')
+plt.ylabel('Frecuencia')
+plt.show()
+
+plt.figure(figsize=(10, 6))
+sns.countplot(x=df['review_score'], data=df, palette='muted')
+plt.title('Distribución de Review Score')
+plt.xlabel('Review Score')
+plt.ylabel('Frecuencia')
+plt.show()
+
+# 10. Análisis de patrones y relaciones en las variables de ventas
+# Analizar la relación entre el precio y la puntuación de la reseña
+plt.figure(figsize=(10, 6))
+sns.scatterplot(x='order_price', y='review_score', data=df, color='green')
+plt.title('Relación entre el precio y la puntuación de la reseña')
+plt.xlabel('Order Price')
+plt.ylabel('Review Score')
+plt.show()
