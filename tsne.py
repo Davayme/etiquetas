@@ -11,7 +11,7 @@ df = pd.read_csv('labeled_dataset.csv', sep=';')
 # 2. Seleccionar features relevantes para t-SNE
 features = ['review_score', 'shipping_time_days', 'product_discount', 
             'customer_complaints', 'seller_response_time', 'order_price',
-            'freight_value', 'product_weight', 'inventory_stock_level']
+            'freight_value', 'product_weight', ]
 
 # 3. Preparar los datos
 X = df[features].values

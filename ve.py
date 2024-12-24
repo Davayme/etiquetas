@@ -1,38 +1,39 @@
-import pandas as pd
+import numpy as np
+from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
-import seaborn as sns
+from sklearn.datasets import make_blobs
 
-# Leer el dataset
-df = pd.read_csv("synthetic_dataset.csv", sep=";")
+# Generar datos sintéticos
+n_samples = 1000
+X, y = make_blobs(
+    n_samples=n_samples,
+    centers=3,
+    n_features=20,
+    random_state=42,
+    cluster_std=2.0
+)
 
-# Crear grupos de calificaciones
-def categorize_review(score):
-    if score <= 2:
-        return "1-2 (Malo)"
-    elif score == 3:
-        return "3 (Neutral)"
-    else:
-        return "4-5 (Bueno)"
+# Aplicar t-SNE
+tsne = TSNE(
+    n_components=2,
+    perplexity=30,
+    n_iter=1000,
+    random_state=42
+)
+X_tsne = tsne.fit_transform(X)
 
-# Aplicar categorización
-df['review_category'] = df['review_score'].apply(categorize_review)
+# Visualizar resultados
+plt.figure(figsize=(10, 8))
+scatter = plt.scatter(
+    X_tsne[:, 0],
+    X_tsne[:, 1],
+    c=y,
+    cmap='viridis'
+)
 
-# Calcular distribución
-review_dist = df['review_category'].value_counts()
-review_percent = df['review_category'].value_counts(normalize=True) * 100
-
-# Mostrar resultados
-print("\nDistribución de Reviews:")
-print(review_dist)
-print("\nPorcentajes:")
-print(review_percent)
-
-# Visualizar
-plt.figure(figsize=(10, 6))
-sns.countplot(data=df, x='review_category', order=['1-2 (Malo)', '3 (Neutral)', '4-5 (Bueno)'])
-plt.title('Distribución de Reviews')
-plt.xlabel('Categoría de Review')
-plt.ylabel('Cantidad')
-plt.xticks(rotation=45)
-plt.tight_layout()
+plt.title('Proyección t-SNE - Datos Sintéticos')
+plt.xlabel('Componente 1')
+plt.ylabel('Componente 2')
+plt.colorbar(scatter)
+plt.legend(*scatter.legend_elements(), title="Clases")
 plt.show()
