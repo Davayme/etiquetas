@@ -1,51 +1,75 @@
 import pandas as pd
 import numpy as np
 from sklearn.manifold import TSNE
+from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
 
-# Cargar el dataset
-df = pd.read_csv('labeled_dataset.csv', delimiter=';')
+# 1. Cargar y preparar los datos
+df = pd.read_csv('labeled_dataset.csv', sep=';')
 
-# Definir las características numéricas y categóricas
-caracteristicas_numericas = [
-    'product_weight', 'shipping_time_days', 'freight_value', 
-    'order_price', 'product_discount', 'review_score', 
-    'inventory_stock_level', 'seller_response_time', 'customer_complaints'
-]
+# 2. Seleccionar features relevantes para t-SNE
+features = ['review_score', 'shipping_time_days', 'product_discount', 
+            'customer_complaints', 'seller_response_time', 'order_price',
+            'freight_value', 'product_weight', 'inventory_stock_level']
 
-caracteristicas_categoricas = [
-    'order_year', 'order_month', 'order_day_of_week', 
-    'customer_region', 'seller_region', 'product_category', 
-    'customer_gender'
-]
+# 3. Preparar los datos
+X = df[features].values
+y = df['customer_satisfaction'].values
 
-# Separar las características de entrada (X) y la variable objetivo (y)
-X = df[caracteristicas_numericas + caracteristicas_categoricas]
-y = df['customer_satisfaction']  # La variable objetivo es 'customer_satisfaction'
+# 4. Tomar una muestra aleatoria de 40,000 registros
+np.random.seed(42)
+sample_size = 40000
+indices = np.random.choice(len(X), sample_size, replace=False)
+X_sample = X[indices]
+y_sample = y[indices]
 
-# Preprocesamiento de las características: normalización de numéricas y One-Hot Encoding de categóricas
-from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
+# 5. Normalizar los datos
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X_sample)
 
-# Normalización de características numéricas
-escalador = MinMaxScaler()
-X_numericas = escalador.fit_transform(X[caracteristicas_numericas])
+# 6. Reducir dimensionalidad primero con PCA
+n_components = min(9, len(features))  # Ajustar a número válido de componentes
+pca = PCA(n_components=n_components)
+X_pca = pca.fit_transform(X_scaled)
 
-# One-Hot Encoding de características categóricas
-codificador = OneHotEncoder(sparse_output=False)
-X_categoricas = codificador.fit_transform(X[caracteristicas_categoricas])
+# 7. Aplicar t-SNE con parámetros optimizados
+tsne = TSNE(n_components=2,
+            perplexity=30,
+            early_exaggeration=12,
+            learning_rate=200,
+            n_iter=1000,
+            random_state=42)
 
-# Unir ambas partes
-X_preprocesado = np.hstack([X_numericas, X_categoricas])
+X_tsne = tsne.fit_transform(X_pca)
 
-# Aplicar t-SNE
-tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=1000)
-X_tsne = tsne.fit_transform(X_preprocesado)
+# 8. Crear visualización mejorada
+plt.figure(figsize=(12, 8))
+scatter = plt.scatter(X_tsne[:, 0], X_tsne[:, 1],
+                     c=y_sample,
+                     cmap='viridis',
+                     alpha=0.6,
+                     s=50)
 
-# Visualizar los datos proyectados en 2D
-plt.figure(figsize=(10, 8))
-plt.scatter(X_tsne[:, 0], X_tsne[:, 1], c=y, cmap='viridis', alpha=0.5)
-plt.colorbar(label='Satisfacción del cliente')
-plt.title('Distribución de datos con t-SNE')
+plt.colorbar(scatter)
+plt.title('Proyección t-SNE - Mejor Separación de Clases')
 plt.xlabel('Componente 1')
 plt.ylabel('Componente 2')
+
+# Añadir leyenda
+legend_elements = [plt.Line2D([0], [0], marker='o', color='w', 
+                            markerfacecolor=plt.cm.viridis(i/2), 
+                            label=f'Clase {i}', markersize=10)
+                  for i in range(3)]
+plt.legend(handles=legend_elements, title='Clases', loc='upper right')
+
+plt.tight_layout()
+plt.savefig('tsne_visualization.png', dpi=300, bbox_inches='tight')
 plt.show()
+
+# 9. Imprimir estadísticas de la distribución de clases
+print("\nDistribución de clases en la muestra:")
+unique, counts = np.unique(y_sample, return_counts=True)
+for clase, count in zip(unique, counts):
+    percentage = (count/len(y_sample))*100
+    print(f"Clase {clase}: {count} muestras ({percentage:.2f}%)")
