@@ -1,3 +1,4 @@
+# Importaciones necesarias para el modelo
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import StratifiedKFold
@@ -7,177 +8,161 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.manifold import TSNE
 
-# Cargar el dataset
-df = pd.read_csv('labeled_dataset.csv', delimiter=';')
+# Carga y división de características
+datos = pd.read_csv('labeled_dataset.csv', delimiter=';')
 
-# Definir las características numéricas y categóricas
-caracteristicas_numericas = [
-    'product_weight', 'shipping_time_days', 'freight_value', 
-    'order_price', 'product_discount', 'review_score', 
-    'inventory_stock_level', 'seller_response_time', 'customer_complaints'
+# Variables que influyen en la satisfacción del cliente
+variables_numericas = [
+   'product_weight', 'shipping_time_days', 'freight_value', 
+   'order_price', 'product_discount', 'review_score', 
+   'inventory_stock_level', 'seller_response_time', 'customer_complaints'
 ]
 
-caracteristicas_categoricas = [
-    'order_year', 'order_month', 'order_day_of_week', 
-    'customer_region', 'seller_region', 'product_category', 
-    'customer_gender'
+variables_categoricas = [
+   'order_year', 'order_month', 'order_day_of_week', 
+   'customer_region', 'seller_region', 'product_category', 
+   'customer_gender'
 ]
 
-# Separar las características de entrada (X) y la variable objetivo (y)
-X = df[caracteristicas_numericas + caracteristicas_categoricas]
-y = df['customer_satisfaction']  # La variable objetivo es 'customer_satisfaction'
+# Preparación de datos para el modelo
+caracteristicas = datos[variables_numericas + variables_categoricas]
+variable_objetivo = datos['customer_satisfaction']
 
-# Preprocesamiento de las características: normalización de numéricas y One-Hot Encoding de categóricas
-escalador = MinMaxScaler()
-X_numericas = escalador.fit_transform(X[caracteristicas_numericas])
+# Normalización de variables numéricas
+normalizador = MinMaxScaler()
+datos_numericos_normalizados = normalizador.fit_transform(caracteristicas[variables_numericas])
 
-# One-Hot Encoding de características categóricas
-codificador = OneHotEncoder(sparse_output=False)
-X_categoricas = codificador.fit_transform(X[caracteristicas_categoricas])
+# Codificación de variables categóricas
+codificador_categorico = OneHotEncoder(sparse_output=False)
+datos_categoricos_codificados = codificador_categorico.fit_transform(caracteristicas[variables_categoricas])
 
-# Unir ambas partes
-X_preprocesado = np.hstack([X_numericas, X_categoricas])
+# Unión de datos preprocesados
+datos_preprocesados = np.hstack([datos_numericos_normalizados, datos_categoricos_codificados])
+etiquetas = variable_objetivo.values
 
-# Convertir las etiquetas 'customer_satisfaction' en formato adecuado
-y = y.values
+def inicializar_parametros(numero_entradas, numero_clases):
+   """Inicialización de pesos y sesgos del modelo"""
+   pesos_iniciales = np.random.uniform(-1, 1, (numero_entradas, numero_clases)) * 0.01
+   sesgos_iniciales = np.zeros((1, numero_clases))
+   return pesos_iniciales, sesgos_iniciales
 
-# Inicialización de pesos y sesgos
-def inicializar_pesos(n_entradas, n_clases):
-    pesos = np.random.uniform(-1, 1, (n_entradas, n_clases)) * 0.01
-    sesgos = np.zeros((1, n_clases))
-    return pesos, sesgos
+def calcular_softmax(valores):
+   """Función de activación softmax con estabilidad numérica"""
+   exponenciales = np.exp(valores - np.max(valores, axis=1, keepdims=True))
+   return exponenciales / np.sum(exponenciales, axis=1, keepdims=True)
 
-# Función softmax
-def softmax(z):
-    exps = np.exp(z - np.max(z, axis=1, keepdims=True))  # Resta el valor máximo para estabilidad numérica
-    return exps / np.sum(exps, axis=1, keepdims=True)
+def calcular_perdida(etiquetas_reales, predicciones):
+   """Cálculo de la función de pérdida (entropía cruzada)"""
+   numero_muestras = etiquetas_reales.shape[0]
+   indices_reales = np.argmax(etiquetas_reales, axis=1)
+   return -np.sum(np.log(predicciones[np.arange(numero_muestras), indices_reales])) / numero_muestras
 
-# Cálculo de la entropía cruzada (log loss) con regularización L2
-def entropia_cruzada(y, y_pred):
-    m = y.shape[0]
-    y = np.argmax(y, axis=1)  # Convertir y de one-hot a índices
-    log_loss = -np.sum(np.log(y_pred[np.arange(m), y])) / m
-    return log_loss
+def actualizar_parametros(datos, etiquetas_reales, predicciones, pesos, sesgos, tasa_aprendizaje=0.01):
+   """Actualización de parámetros usando gradiente descendente"""
+   numero_muestras = datos.shape[0]
+   gradiente_pesos = np.dot(datos.T, (predicciones - etiquetas_reales)) / numero_muestras
+   gradiente_sesgos = np.sum(predicciones - etiquetas_reales, axis=0, keepdims=True) / numero_muestras
+   
+   pesos_actualizados = pesos - tasa_aprendizaje * gradiente_pesos
+   sesgos_actualizados = sesgos - tasa_aprendizaje * gradiente_sesgos
+   return pesos_actualizados, sesgos_actualizados
 
-# Actualización de pesos utilizando gradiente descendente
-def actualizar_pesos(X, y, y_pred, pesos, sesgos, tasa_aprendizaje=0.01):
-    m = X.shape[0]
-    grad_pesos = np.dot(X.T, (y_pred - y)) / m
-    grad_sesgos = np.sum(y_pred - y, axis=0, keepdims=True) / m
-    pesos -= tasa_aprendizaje * grad_pesos
-    sesgos -= tasa_aprendizaje * grad_sesgos
-    return pesos, sesgos
+def entrenar_modelo(datos, etiquetas, numero_clases, iteraciones=1000, tasa_aprendizaje=0.001):
+   """Entrenamiento completo del modelo"""
+   numero_entradas = datos.shape[1]
+   pesos, sesgos = inicializar_parametros(numero_entradas, numero_clases)
+   
+   for iteracion in range(iteraciones):
+       salida_lineal = np.dot(datos, pesos) + sesgos
+       predicciones = calcular_softmax(salida_lineal)
+       perdida = calcular_perdida(etiquetas, predicciones)
+       pesos, sesgos = actualizar_parametros(datos, etiquetas, predicciones, pesos, sesgos, tasa_aprendizaje)
+       
+       if iteracion % 100 == 0:
+           print(f"Iteración {iteracion}, Pérdida: {perdida:.4f}")
+   
+   return pesos, sesgos
 
-# Entrenamiento con gradiente descendente
-def entrenar(X, y, n_clases, n_iter=1000, tasa_aprendizaje=0.001):
-    n_entradas = X.shape[1]
-    pesos, sesgos = inicializar_pesos(n_entradas, n_clases)
-    
-    for i in range(n_iter):
-        z = np.dot(X, pesos) + sesgos
-        y_pred = softmax(z)
-        perdida = entropia_cruzada(y, y_pred)
-        pesos, sesgos = actualizar_pesos(X, y, y_pred, pesos, sesgos, tasa_aprendizaje)
-        
-        if i % 100 == 0:
-            print(f"Iteración {i}, Pérdida: {perdida:.4f}")
-    
-    return pesos, sesgos
+def realizar_prediccion(datos, pesos, sesgos):
+   """Realiza predicciones usando el modelo entrenado"""
+   salida_lineal = np.dot(datos, pesos) + sesgos
+   predicciones = calcular_softmax(salida_lineal)
+   return np.argmax(predicciones, axis=1)
 
-# Función de predicción
-def predecir(X, pesos, sesgos):
-    z = np.dot(X, pesos) + sesgos
-    y_pred = softmax(z)
-    return np.argmax(y_pred, axis=1)
-
-# Agregar visualización de t-SNE
-def graficar_tsne(X, y, titulo="Proyección t-SNE"):
-    tsne = TSNE(n_components=2, random_state=42)
-    X_tsne = tsne.fit_transform(X)
-    
-    plt.figure(figsize=(8,6))
-    scatter = plt.scatter(X_tsne[:, 0], X_tsne[:, 1], c=y, cmap='viridis', alpha=0.7)
-    plt.title(titulo)
-    plt.xlabel('Componente 1')
-    plt.ylabel('Componente 2')
-    plt.legend(*scatter.legend_elements(), title="Clases")
-    plt.colorbar(scatter)
-    plt.show()
-
-
-# Validación cruzada estratificada
-cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+# Configuración de la validación cruzada
+validacion_cruzada = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 errores_entrenamiento = []
 errores_prueba = []
-confusion_matrices = []
+matrices_confusion = []
 mejor_error_prueba = float('inf')
-mejor_pesos = None
-mejor_sesgos = None
-mejor_fold = -1
-
-mejor_X_train = None
-mejor_y_train_pred = None
+mejores_parametros = {'pesos': None, 'sesgos': None, 'fold': -1}
+mejores_datos = {'X_train': None, 'y_train_pred': None}
 
 # Entrenamiento y evaluación con validación cruzada
-for fold, (train_idx, test_idx) in enumerate(cv.split(X_preprocesado, y), 1):
-    print(f"\n--- Fold {fold} ---")
-    
-    # Dividir los datos en entrenamiento y prueba
-    X_train, X_test = X_preprocesado[train_idx], X_preprocesado[test_idx]
-    y_train, y_test = y[train_idx], y[test_idx]
-    
-    # Convertir y_train y y_test a formato one-hot
-    y_train_onehot = np.eye(3)[y_train]  # Asumimos 3 clases: 0, 1, 2
-    y_test_onehot = np.eye(3)[y_test]
-    
-    # Entrenamiento
-    pesos, sesgos = entrenar(X_train, y_train_onehot, n_clases=3, n_iter=1000, tasa_aprendizaje=0.50)
-    
-    # Predicciones
-    y_train_pred = predecir(X_train, pesos, sesgos)
-    y_test_pred = predecir(X_test, pesos, sesgos)
-    
-    # Calcular precisión y error
-    precision_entrenamiento = accuracy_score(y_train, y_train_pred)
-    precision_prueba = accuracy_score(y_test, y_test_pred)
-    
-    error_entrenamiento = 1 - precision_entrenamiento
-    error_prueba = 1 - precision_prueba
-    
-    errores_entrenamiento.append(error_entrenamiento)
-    errores_prueba.append(error_prueba)
-    
-    print(f"Precisión entrenamiento: {precision_entrenamiento:.4f}, Error entrenamiento: {error_entrenamiento:.4f}")
-    print(f"Precisión prueba: {precision_prueba:.4f}, Error prueba: {error_prueba:.4f}")
-    
-    # Guardar el mejor fold (con menor error de prueba)
-    if error_prueba < mejor_error_prueba:
-        mejor_error_prueba = error_prueba
-        mejor_pesos = pesos
-        mejor_sesgos = sesgos
-        mejor_fold = fold
-        mejor_X_train = X_train
-        mejor_y_train_pred = y_train_pred
-    
-    # Calcular la matriz de confusión
-    cm = confusion_matrix(y_test, y_test_pred)
-    confusion_matrices.append(cm)
+for fold, (indices_entrenamiento, indices_prueba) in enumerate(validacion_cruzada.split(datos_preprocesados, etiquetas), 1):
+   print(f"\n--- Iteración {fold} de Validación Cruzada ---")
+   
+   # División de datos en entrenamiento y prueba
+   X_entrenamiento = datos_preprocesados[indices_entrenamiento]
+   X_prueba = datos_preprocesados[indices_prueba]
+   y_entrenamiento = etiquetas[indices_entrenamiento]
+   y_prueba = etiquetas[indices_prueba]
+   
+   # Conversión a formato one-hot
+   y_entrenamiento_onehot = np.eye(3)[y_entrenamiento]
+   y_prueba_onehot = np.eye(3)[y_prueba]
+   
+   # Entrenamiento del modelo
+   pesos, sesgos = entrenar_modelo(X_entrenamiento, y_entrenamiento_onehot, 
+                                 numero_clases=3, iteraciones=1000, tasa_aprendizaje=0.85)
+   
+   # Realizar predicciones
+   predicciones_entrenamiento = realizar_prediccion(X_entrenamiento, pesos, sesgos)
+   predicciones_prueba = realizar_prediccion(X_prueba, pesos, sesgos)
+   
+   # Cálculo de métricas
+   precision_entrenamiento = accuracy_score(y_entrenamiento, predicciones_entrenamiento)
+   precision_prueba = accuracy_score(y_prueba, predicciones_prueba)
+   
+   error_entrenamiento = 1 - precision_entrenamiento
+   error_prueba = 1 - precision_prueba
+   
+   # Almacenamiento de métricas
+   errores_entrenamiento.append(error_entrenamiento)
+   errores_prueba.append(error_prueba)
+   
+   print(f"Precisión en entrenamiento: {precision_entrenamiento:.4f}, Error: {error_entrenamiento:.4f}")
+   print(f"Precisión en prueba: {precision_prueba:.4f}, Error: {error_prueba:.4f}")
+   
+   # Actualización del mejor modelo
+   if error_prueba < mejor_error_prueba:
+       mejor_error_prueba = error_prueba
+       mejores_parametros['pesos'] = pesos
+       mejores_parametros['sesgos'] = sesgos
+       mejores_parametros['fold'] = fold
+       mejores_datos['X_train'] = X_entrenamiento
+       mejores_datos['y_train_pred'] = predicciones_entrenamiento
+   
+   # Cálculo de matriz de confusión
+   matrices_confusion.append(confusion_matrix(y_prueba, predicciones_prueba))
 
-# Promedio de errores
-print(f"\nError promedio de entrenamiento: {np.mean(errores_entrenamiento):.4f}")
-print(f"Error promedio de prueba: {np.mean(errores_prueba):.4f}")
+# Resumen de resultados
+print(f"\nError promedio en entrenamiento: {np.mean(errores_entrenamiento):.4f}")
+print(f"Error promedio en prueba: {np.mean(errores_prueba):.4f}")
 
-# Mostrar la matriz de confusión del mejor fold
-print(f"\nMatriz de confusión del mejor fold (Fold {mejor_fold}):")
-cm_mejor_fold = confusion_matrices[mejor_fold - 1]
-print(cm_mejor_fold)
+# Visualización de la matriz de confusión del mejor modelo
+print(f"\nMatriz de confusión del mejor modelo (Iteración {mejores_parametros['fold']}):")
+mejor_matriz_confusion = matrices_confusion[mejores_parametros['fold'] - 1]
+print(mejor_matriz_confusion)
 
-# Mostrar la matriz de confusión del mejor fold
+# Visualización gráfica de la matriz de confusión
 plt.figure(figsize=(6,6))
-sns.heatmap(cm_mejor_fold, annot=True, fmt='.2f', cmap='Blues', xticklabels=['Clase 0', 'Clase 1', 'Clase 2'], yticklabels=['Clase 0', 'Clase 1', 'Clase 2'])
-plt.title(f'Matriz de Confusión - Mejor Fold (Fold {mejor_fold})')
+sns.heatmap(mejor_matriz_confusion, annot=True, fmt='.2f', cmap='Blues',
+           xticklabels=['Insatisfecho', 'Neutral', 'Satisfecho'],
+           yticklabels=['Insatisfecho', 'Neutral', 'Satisfecho'])
+plt.title(f'Matriz de Confusión - Mejor Modelo (Iteración {mejores_parametros["fold"]})')
 plt.xlabel('Predicción')
-plt.ylabel('Real')
+plt.ylabel('Valor Real')
 plt.show()
 
-graficar_tsne(mejor_X_train, mejor_y_train_pred, titulo=f"Proyección t-SNE - Mejor Fold (Fold {mejor_fold})")
+              
