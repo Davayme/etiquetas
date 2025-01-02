@@ -5,7 +5,7 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 import matplotlib.pyplot as plt
 
 # Cargar datos
-df = pd.read_csv('labeled_dataset.csv', sep=';')
+df = pd.read_csv('labeled_dataset_fuzzy.csv', sep=';')
 
 # Features
 numeric_features = ['review_score', 'customer_complaints', 'shipping_time_days', 'freight_value', 'order_price']

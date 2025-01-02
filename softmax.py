@@ -6,7 +6,6 @@ from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
 from sklearn.metrics import accuracy_score, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.manifold import TSNE
 
 # Carga y división de características
 datos = pd.read_csv('labeled_dataset.csv', delimiter=';')
@@ -14,8 +13,7 @@ datos = pd.read_csv('labeled_dataset.csv', delimiter=';')
 # Variables que influyen en la satisfacción del cliente
 variables_numericas = [
    'product_weight', 'shipping_time_days', 'freight_value', 
-   'order_price', 'product_discount', 'review_score', 
-   'inventory_stock_level', 'seller_response_time', 'customer_complaints'
+   'order_price', 'product_discount', 'review_score', 'seller_response_time', 'customer_complaints'
 ]
 
 variables_categoricas = [
