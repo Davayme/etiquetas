@@ -162,5 +162,3 @@ plt.title(f'Matriz de Confusión - Mejor Modelo (Iteración {mejores_parametros[
 plt.xlabel('Predicción')
 plt.ylabel('Valor Real')
 plt.show()
-
-              
