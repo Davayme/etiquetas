@@ -30,7 +30,7 @@ X_train, X_test, y_train, y_test = train_test_split(
     random_state=42
 )
 
-# 5. Construir modelo más simple y mejor regularizado
+
 model = tf.keras.Sequential([
     # Capa de entrada más pequeña
     tf.keras.layers.Dense(48, activation='relu', input_shape=(X.shape[1],),
