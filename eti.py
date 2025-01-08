@@ -1,134 +1,105 @@
 import pandas as pd
 import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
+from scipy.stats import norm
 
-def assign_region_value(region):
-    """
-    Asigna valor numérico a cada región basado en su potencial económico
-    """
-    region_values = {
-        'Southeast': 5.0,  # São Paulo, Rio (mayor PIB)
-        'South': 4.0,      # Segunda región más rica
-        'Central-West': 3.0, # Tercera
-        'Northeast': 2.0,   # Cuarta
-        'North': 1.0       # Quinta
-    }
-    return region_values[region]
+def add_controlled_noise(series, noise_scale=0.05):
+    """Añade ruido gaussiano controlado a una serie."""
+    noise = np.random.normal(0, noise_scale * np.std(series), size=len(series))
+    return series + noise
 
-def calculate_shipping_label(df):
+def calculate_shipping_labels(df):
     """
-    Calcula las etiquetas de rentabilidad (0: baja, 1: media, 2: alta)
+    Calcula etiquetas de envío usando un enfoque fuzzy menos determinista
+    Versión optimizada con operaciones vectorizadas
     """
     df = df.copy()
+    n_samples = len(df)
     
-    # 1. Convertir regiones a valores numéricos para el cálculo interno
-    df['customer_region_value'] = df['customer_region'].apply(assign_region_value)
-    df['seller_region_value'] = df['seller_region'].apply(assign_region_value)
+    # 1. Calcular ratios con operaciones vectorizadas
+    price_distance_ratio = add_controlled_noise(df['product_price'] / (df['distance'] + 1))
+    price_volume_ratio = add_controlled_noise(df['product_price'] / (df['product_volume'] + 1))
+    price_freight_ratio = add_controlled_noise(df['product_price'] / (df['freight_value'] + 1))
     
-    # 2. Normalizamos variables para el cálculo
-    scaler = lambda x: (x - x.min()) / (x.max() - x.min())
+    # 2. Calcular scores base con pesos variables
+    weights = np.random.normal([0.4, 0.3, 0.3], 0.05)
+    weights = weights / np.sum(weights)
     
-    df['price_norm'] = scaler(df['product_price'])
-    df['distance_norm'] = 1 - scaler(df['distance'])
-    df['freight_norm'] = 1 - scaler(df['freight_value'])
-    df['volume_norm'] = 1 - scaler(df['product_volume'])
-    df['customer_region_norm'] = scaler(df['customer_region_value'])
-    df['seller_region_norm'] = scaler(df['seller_region_value'])
-    
-    # 3. Calculamos score con pesos ajustados
-    df['rentability_score'] = (
-        df['price_norm'] * 0.3 +             # Precio
-        df['distance_norm'] * 0.25 +         # Distancia
-        df['freight_norm'] * 0.25 +          # Flete
-        df['volume_norm'] * 0.1 +            # Volumen
-        df['customer_region_norm'] * 0.05 +  # Región cliente
-        df['seller_region_norm'] * 0.05      # Región vendedor
+    base_scores = (
+        price_distance_ratio * weights[0] +
+        price_volume_ratio * weights[1] +
+        price_freight_ratio * weights[2]
     )
     
-    # 4. Asignamos etiquetas con distribución natural
-    thresholds = [0, 0.37, 0.74, 1.0]  # Aproximadamente 37-37-26
-    labels = pd.qcut(df['rentability_score'], q=thresholds, labels=[0, 1, 2])
+    # 3. Definir fronteras
+    q30, q40 = np.percentile(base_scores, [30, 40])
+    q60, q70 = np.percentile(base_scores, [60, 70])
     
-    return labels
-
-def print_metrics(df):
-    """
-    Imprime métricas relevantes del etiquetado solo con variables originales
-    """
-    # 1. Distribución de clases
-    print("\nDistribución de clases:")
-    class_counts = df['shipping_label'].value_counts().sort_index()
-    total_samples = len(df)
+    # 4. Crear máscara para cada zona
+    low_mask = base_scores < q30
+    high_mask = base_scores > q70
+    low_trans_mask = (base_scores >= q30) & (base_scores < q40)
+    high_trans_mask = (base_scores >= q60) & (base_scores < q70)
+    mid_mask = (base_scores >= q40) & (base_scores < q60)
     
-    for label, count in class_counts.items():
-        percentage = (count / total_samples) * 100
-        if label == 0:
-            print(f"Clase {label} (Baja rentabilidad): {count} muestras ({percentage:.2f}%)")
-        elif label == 1:
-            print(f"Clase {label} (Media rentabilidad): {count} muestras ({percentage:.2f}%)")
-        else:
-            print(f"Clase {label} (Alta rentabilidad): {count} muestras ({percentage:.2f}%)")
+    # 5. Inicializar array de etiquetas
+    labels = np.zeros(n_samples)
     
-    # 2. Matriz de correlaciones solo con variables originales
-    print("\nMatriz de correlaciones con shipping_label:")
+    # Asignar etiquetas directas
+    labels[high_mask] = 2
     
-    # Solo incluimos las variables originales
-    numeric_cols = ['product_volume', 'product_price', 'distance', 'freight_value', 
-                   'customer_region_value', 'seller_region_value', 'shipping_label']
-    correlations = df[numeric_cols].corr()
+    # Zonas de transición
+    n_low_trans = np.sum(low_trans_mask)
+    if n_low_trans > 0:
+        trans_scores = (base_scores[low_trans_mask] - q30) / (q40 - q30)
+        probs = norm.cdf(trans_scores, loc=0.5, scale=0.2)
+        labels[low_trans_mask] = np.random.binomial(1, probs)
     
-    label_correlations = correlations['shipping_label'].sort_values(ascending=False)
+    n_high_trans = np.sum(high_trans_mask)
+    if n_high_trans > 0:
+        trans_scores = (base_scores[high_trans_mask] - q60) / (q70 - q60)
+        probs = norm.cdf(trans_scores, loc=0.5, scale=0.2)
+        labels[high_trans_mask] = 1 + np.random.binomial(1, probs)
     
-    print("\nCorrelaciones ordenadas con shipping_label:")
-    for var, corr in label_correlations.items():
-        if var != 'shipping_label':
-            strength = ""
-            if abs(corr) >= 0.7:
-                strength = "(Correlación fuerte)"
-            elif abs(corr) >= 0.5:
-                strength = "(Correlación moderada)"
-            else:
-                strength = "(Correlación débil)"
-            print(f"{var}: {corr:.3f} {strength}")
-
-def preprocess_dataframe(df):
-    """
-    Preprocesa el DataFrame convirtiendo columnas numéricas
-    """
-    df = df.copy()
-    numeric_cols = ['product_price', 'freight_value', 'distance', 'product_volume']
+    # Zona media - Corregido el broadcasting
+    n_mid = np.sum(mid_mask)
+    if n_mid > 0:
+        mid_scores = base_scores[mid_mask]
+        mid_mean = np.mean([q40, q60])
+        # Asignar probabilidades según la posición en la zona media
+        labels[mid_mask] = np.where(
+            mid_scores < mid_mean,
+            np.random.choice([0, 1, 2], size=n_mid, p=[0.15, 0.75, 0.1]),
+            np.random.choice([0, 1, 2], size=n_mid, p=[0.1, 0.75, 0.15])
+        )
     
-    for col in numeric_cols:
-        if df[col].dtype == 'object':
-            df[col] = pd.to_numeric(df[col].str.replace(',', '.'), errors='coerce')
-        else:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+    # 6. Ajustar casos extremos
+    extreme_ratio = price_distance_ratio * price_volume_ratio * price_freight_ratio
+    extreme_high = extreme_ratio > np.percentile(extreme_ratio, 95)
+    extreme_low = extreme_ratio < np.percentile(extreme_ratio, 5)
     
-    return df
+    # Ajustar con probabilidad
+    random_mask = np.random.random(n_samples) < 0.9
+    labels[extreme_high & random_mask] = 2
+    labels[extreme_high & ~random_mask] = 1
+    labels[extreme_low & random_mask] = 0
+    labels[extreme_low & ~random_mask] = 1
+    
+    return pd.Series(labels)
 
 if __name__ == "__main__":
-    try:
-        # Leer y preprocesar el dataset
-        df = pd.read_csv("envios.csv", sep=';')
-        df = preprocess_dataframe(df)
-        
-        # Calcular regiones numéricas (necesario para correlaciones)
-        df['customer_region_value'] = df['customer_region'].apply(assign_region_value)
-        df['seller_region_value'] = df['seller_region'].apply(assign_region_value)
-        
-        # Calcular etiquetas
-        df['shipping_label'] = calculate_shipping_label(df)
-        
-        # Mostrar métricas
-        print_metrics(df)
-        
-        # Eliminar columnas auxiliares antes de guardar
-        df = df.drop(['customer_region_value', 'seller_region_value'], axis=1)
-        
-        # Guardar dataset
-        df.to_csv("etiquetado_envios.csv", sep=';', index=False)
-        print("\nProceso de etiquetado completado exitosamente.")
-        
-    except Exception as e:
-        print(f"Error durante el proceso de etiquetado: {str(e)}")
+    # Leer el dataset
+    df = pd.read_csv("envios.csv", sep=';')
+    
+    # Calcular nuevas etiquetas
+    df['shipping_label'] = calculate_shipping_labels(df)
+    
+    # Mostrar distribución
+    print("\nDistribución de etiquetas:")
+    distribution = df['shipping_label'].value_counts().sort_index()
+    for label, count in distribution.items():
+        percentage = (count / len(df)) * 100
+        print(f"Clase {int(label)}: {count} casos ({percentage:.2f}%)")
+    
+    # Guardar resultados
+    df.to_csv("envios_etiquetado_fuzzy1.csv", sep=';', index=False)
+    print("\nProceso de etiquetado completado exitosamente.")
