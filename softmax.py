@@ -91,6 +91,7 @@ class ClasificadorSoftmax:
         """
         # Inicialización
         num_caracteristicas = X.shape[1]
+        print(f"Entrenando modelo con {num_caracteristicas} características y {num_clases} clases...")
         pesos = np.random.uniform(-1, 1, (num_caracteristicas, num_clases)) * 0.01
         sesgos = np.zeros((1, num_clases))
         y_onehot = np.eye(num_clases)[y]
@@ -148,7 +149,7 @@ class ClasificadorSoftmax:
             error_train = 1 - precision_train
             error_test = 1 - precision_test
             
-            # Mostrar resultados como en la imagen original
+
             print(f"Precisión entrenamiento: {precision_train:.4f}, Error entrenamiento: {error_train:.4f}")
             print(f"Precisión prueba: {precision_test:.4f}, Error prueba: {error_test:.4f}")
             
