@@ -3,45 +3,58 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+def assign_region_value(region):
+    """
+    Asigna valor numérico a cada región basado en su potencial económico
+    """
+    region_values = {
+        'Southeast': 5.0,  # São Paulo, Rio (mayor PIB)
+        'South': 4.0,      # Segunda región más rica
+        'Central-West': 3.0, # Tercera
+        'Northeast': 2.0,   # Cuarta
+        'North': 1.0       # Quinta
+    }
+    return region_values[region]
+
 def calculate_shipping_label(df):
     """
     Calcula las etiquetas de rentabilidad (0: baja, 1: media, 2: alta)
-    usando una lógica que maximice las correlaciones
     """
-    # 1. Calculamos el ratio precio/flete (esto tendrá correlación fuerte con rentabilidad)
-    df['price_freight_ratio'] = df['product_price'] / (df['freight_value'] + 1)  # +1 para evitar división por cero
+    df = df.copy()
     
-    # 2. Calculamos ratio margen/distancia
-    df['margin_per_distance'] = (df['product_price'] - df['freight_value']) / (df['distance'] + 1)
+    # 1. Convertir regiones a valores numéricos para el cálculo interno
+    df['customer_region_value'] = df['customer_region'].apply(assign_region_value)
+    df['seller_region_value'] = df['seller_region'].apply(assign_region_value)
     
-    # 3. Calculamos el ratio precio/volumen para la eficiencia del envío
-    df['price_volume_ratio'] = df['product_price'] / (df['product_volume'] + 1)
+    # 2. Normalizamos variables para el cálculo
+    scaler = lambda x: (x - x.min()) / (x.max() - x.min())
     
-    # 4. Combinamos los ratios para crear un score
+    df['price_norm'] = scaler(df['product_price'])
+    df['distance_norm'] = 1 - scaler(df['distance'])
+    df['freight_norm'] = 1 - scaler(df['freight_value'])
+    df['volume_norm'] = 1 - scaler(df['product_volume'])
+    df['customer_region_norm'] = scaler(df['customer_region_value'])
+    df['seller_region_norm'] = scaler(df['seller_region_value'])
+    
+    # 3. Calculamos score con pesos ajustados
     df['rentability_score'] = (
-        df['price_freight_ratio'] * 0.4 +
-        df['margin_per_distance'] * 0.4 +
-        df['price_volume_ratio'] * 0.2
+        df['price_norm'] * 0.3 +             # Precio
+        df['distance_norm'] * 0.25 +         # Distancia
+        df['freight_norm'] * 0.25 +          # Flete
+        df['volume_norm'] * 0.1 +            # Volumen
+        df['customer_region_norm'] * 0.05 +  # Región cliente
+        df['seller_region_norm'] * 0.05      # Región vendedor
     )
     
-    # 5. Normalizamos el score usando percentiles
-    df['rentability_normalized'] = df['rentability_score'].rank(pct=True)
-    
-    # 6. Asignamos etiquetas usando una distribución 40-35-25
-    labels = pd.qcut(df['rentability_normalized'], 
-                    q=[0, 0.40, 0.75, 1],
-                    labels=[0, 1, 2])
-    
-    # 7. Limpiamos las columnas temporales
-    df = df.drop(['price_freight_ratio', 'margin_per_distance', 
-                  'price_volume_ratio', 'rentability_score', 
-                  'rentability_normalized'], axis=1)
+    # 4. Asignamos etiquetas con distribución natural
+    thresholds = [0, 0.37, 0.74, 1.0]  # Aproximadamente 37-37-26
+    labels = pd.qcut(df['rentability_score'], q=thresholds, labels=[0, 1, 2])
     
     return labels
 
 def print_metrics(df):
     """
-    Imprime métricas relevantes del etiquetado
+    Imprime métricas relevantes del etiquetado solo con variables originales
     """
     # 1. Distribución de clases
     print("\nDistribución de clases:")
@@ -57,12 +70,14 @@ def print_metrics(df):
         else:
             print(f"Clase {label} (Alta rentabilidad): {count} muestras ({percentage:.2f}%)")
     
-    # 2. Matriz de correlaciones
+    # 2. Matriz de correlaciones solo con variables originales
     print("\nMatriz de correlaciones con shipping_label:")
-    numeric_cols = ['product_volume', 'product_price', 'distance', 'freight_value', 'shipping_label']
+    
+    # Solo incluimos las variables originales
+    numeric_cols = ['product_volume', 'product_price', 'distance', 'freight_value', 
+                   'customer_region_value', 'seller_region_value', 'shipping_label']
     correlations = df[numeric_cols].corr()
     
-    # Ordenamos las correlaciones con shipping_label de mayor a menor
     label_correlations = correlations['shipping_label'].sort_values(ascending=False)
     
     print("\nCorrelaciones ordenadas con shipping_label:")
@@ -76,39 +91,43 @@ def print_metrics(df):
             else:
                 strength = "(Correlación débil)"
             print(f"{var}: {corr:.3f} {strength}")
-            
-    # Crear y guardar el heatmap de correlaciones
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(correlations, annot=True, cmap='coolwarm', center=0)
-    plt.title('Matriz de Correlaciones')
-    plt.tight_layout()
-    plt.savefig('correlation_matrix.png')
-    plt.close()
 
-def preprocess_numeric_columns(df):
-    """Convierte columnas numéricas de string a float"""
+def preprocess_dataframe(df):
+    """
+    Preprocesa el DataFrame convirtiendo columnas numéricas
+    """
+    df = df.copy()
     numeric_cols = ['product_price', 'freight_value', 'distance', 'product_volume']
-    df_copy = df.copy()
     
     for col in numeric_cols:
-        df_copy[col] = pd.to_numeric(df_copy[col].str.replace(',', '.'), errors='coerce')
+        if df[col].dtype == 'object':
+            df[col] = pd.to_numeric(df[col].str.replace(',', '.'), errors='coerce')
+        else:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
     
-    return df_copy
-
+    return df
 
 if __name__ == "__main__":
     try:
-        # Leer el dataset
-        df = pd.read_csv("envios.csv", sep=';', decimal=',')
-        df = preprocess_numeric_columns(df)
+        # Leer y preprocesar el dataset
+        df = pd.read_csv("envios.csv", sep=';')
+        df = preprocess_dataframe(df)
+        
+        # Calcular regiones numéricas (necesario para correlaciones)
+        df['customer_region_value'] = df['customer_region'].apply(assign_region_value)
+        df['seller_region_value'] = df['seller_region'].apply(assign_region_value)
+        
         # Calcular etiquetas
         df['shipping_label'] = calculate_shipping_label(df)
         
         # Mostrar métricas
         print_metrics(df)
         
-        # Guardar dataset etiquetado
-        df.to_csv("etiquetado_envios.csv", sep=';', decimal=',', index=False)
+        # Eliminar columnas auxiliares antes de guardar
+        df = df.drop(['customer_region_value', 'seller_region_value'], axis=1)
+        
+        # Guardar dataset
+        df.to_csv("etiquetado_envios.csv", sep=';', index=False)
         print("\nProceso de etiquetado completado exitosamente.")
         
     except Exception as e:
