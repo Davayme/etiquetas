@@ -5,14 +5,12 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 import matplotlib.pyplot as plt
 
-# 1. Cargar datos
+# 1. Cargar datos y preprocesamiento (igual que antes)
 df = pd.read_csv('envios_etiquetado_fuzzy2.csv', sep=';')
 
-# 2. Definir características
 numeric_features = ['product_price', 'product_volume', 'freight_value', 'distance']
 categorical_features = ['customer_region', 'seller_region']
 
-# 3. Preprocesamiento
 scaler = StandardScaler()
 X_numeric = scaler.fit_transform(df[numeric_features])
 
@@ -22,7 +20,6 @@ X_categorical = encoder.fit_transform(df[categorical_features])
 X = np.hstack([X_numeric, X_categorical])
 y = tf.keras.utils.to_categorical(df['shipping_label'])
 
-# 4. División train-test estratificada
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, 
     test_size=0.2,
@@ -30,60 +27,84 @@ X_train, X_test, y_train, y_test = train_test_split(
     random_state=42
 )
 
-
+# 2. Modelo más profundo
 model = tf.keras.Sequential([
-    # Capa de entrada más pequeña
-    tf.keras.layers.Dense(48, activation='relu', input_shape=(X.shape[1],),
-                         kernel_regularizer=tf.keras.regularizers.l2(0.002)),
+    # Capa de entrada
+    tf.keras.layers.Dense(128, activation='relu', input_shape=(X.shape[1],),
+                         kernel_regularizer=tf.keras.regularizers.l2(0.001)),
     tf.keras.layers.BatchNormalization(),
-    tf.keras.layers.Dropout(0.35),
+    tf.keras.layers.Dropout(0.3),
     
     # Primera capa oculta
-    tf.keras.layers.Dense(32, activation='relu',
-                         kernel_regularizer=tf.keras.regularizers.l2(0.002)),
+    tf.keras.layers.Dense(96, activation='relu',
+                         kernel_regularizer=tf.keras.regularizers.l2(0.001)),
     tf.keras.layers.BatchNormalization(),
-    tf.keras.layers.Dropout(0.35),  # Mismo dropout para consistencia
+    tf.keras.layers.Dropout(0.3),
+    
+    # Segunda capa oculta
+    tf.keras.layers.Dense(64, activation='relu',
+                         kernel_regularizer=tf.keras.regularizers.l2(0.001)),
+    tf.keras.layers.BatchNormalization(),
+    tf.keras.layers.Dropout(0.25),
+    
+    # Tercera capa oculta
+    tf.keras.layers.Dense(48, activation='relu',
+                         kernel_regularizer=tf.keras.regularizers.l2(0.001)),
+    tf.keras.layers.BatchNormalization(),
+    tf.keras.layers.Dropout(0.25),
+    
+    # Cuarta capa oculta
+    tf.keras.layers.Dense(32, activation='relu',
+                         kernel_regularizer=tf.keras.regularizers.l2(0.001)),
+    tf.keras.layers.BatchNormalization(),
+    tf.keras.layers.Dropout(0.2),
+    
+    # Quinta capa oculta
+    tf.keras.layers.Dense(24, activation='relu',
+                         kernel_regularizer=tf.keras.regularizers.l2(0.001)),
+    tf.keras.layers.BatchNormalization(),
+    tf.keras.layers.Dropout(0.2),
     
     # Capa de salida
     tf.keras.layers.Dense(3, activation='softmax')
 ])
 
-# 6. Compilar modelo
-optimizer = tf.keras.optimizers.Adam(learning_rate=0.0003)  # Learning rate aún más bajo
+# 3. Compilación con learning rate bajo
+optimizer = tf.keras.optimizers.Adam(learning_rate=0.0002)
 model.compile(
     optimizer=optimizer,
     loss='categorical_crossentropy',
     metrics=['accuracy']
 )
 
-# 7. Callbacks mejorados para estabilidad
+# 4. Callbacks ajustados
 callbacks = [
     tf.keras.callbacks.EarlyStopping(
-        patience=8,
+        patience=12,
         restore_best_weights=True,
         monitor='val_loss',
         min_delta=0.001
     ),
     tf.keras.callbacks.ReduceLROnPlateau(
         factor=0.2,
-        patience=4,
+        patience=6,
         min_lr=0.00001,
         monitor='val_loss',
         verbose=1
     )
 ]
 
-# 8. Entrenamiento
+# 5. Entrenamiento
 history = model.fit(
     X_train, y_train,
     validation_split=0.2,
-    epochs=100,
-    batch_size=128,  # Batch size más grande para más estabilidad
+    epochs=150,
+    batch_size=64,
     callbacks=callbacks,
     verbose=1
 )
 
-# 9. Evaluación
+# 6. Evaluación
 print("\nEvaluación del modelo:")
 train_loss, train_acc = model.evaluate(X_train, y_train, verbose=0)
 test_loss, test_acc = model.evaluate(X_test, y_test, verbose=0)
@@ -91,7 +112,7 @@ test_loss, test_acc = model.evaluate(X_test, y_test, verbose=0)
 print(f'Exactitud de entrenamiento: {train_acc:.4f}')
 print(f'Exactitud de prueba: {test_acc:.4f}')
 
-# 10. Visualización
+# 7. Visualización
 plt.figure(figsize=(12, 4))
 
 plt.subplot(1, 2, 1)
