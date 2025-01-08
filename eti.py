@@ -2,87 +2,106 @@ import pandas as pd
 import numpy as np
 from scipy.stats import norm
 
-def add_controlled_noise(series, noise_scale=0.05):
+def add_controlled_noise(series, noise_scale=0.03):
     """Añade ruido gaussiano controlado a una serie."""
     noise = np.random.normal(0, noise_scale * np.std(series), size=len(series))
     return series + noise
 
+def calculate_composite_score(df):
+    """
+    Calcula un score compuesto más robusto
+    """
+    def normalize(x):
+        return (x - x.min()) / (x.max() - x.min())
+    
+    # 1. Eficiencia precio-distancia
+    price_distance = normalize(df['product_price'] / (df['distance'] + 1))
+    
+    # 2. Eficiencia precio-volumen
+    price_volume = normalize(df['product_price'] / (df['product_volume'] + 1))
+    
+    # 3. Eficiencia precio-flete
+    price_freight = normalize(df['product_price'] / (df['freight_value'] + 1))
+    
+    # 4. Ratio de beneficio por volumen
+    volume_profit = normalize(
+        (df['product_price'] - df['freight_value']) / (df['product_volume'] + 1)
+    )
+    
+    weights = [0.35, 0.25, 0.25, 0.15]
+    
+    return (
+        price_distance * weights[0] +
+        price_volume * weights[1] +
+        price_freight * weights[2] +
+        volume_profit * weights[3]
+    )
+
 def calculate_shipping_labels(df):
     """
-    Calcula etiquetas de envío usando un enfoque fuzzy menos determinista
-    Versión optimizada con operaciones vectorizadas
+    Calcula etiquetas de envío usando un enfoque fuzzy mejorado y balanceado
     """
     df = df.copy()
     n_samples = len(df)
     
-    # 1. Calcular ratios con operaciones vectorizadas
-    price_distance_ratio = add_controlled_noise(df['product_price'] / (df['distance'] + 1))
-    price_volume_ratio = add_controlled_noise(df['product_price'] / (df['product_volume'] + 1))
-    price_freight_ratio = add_controlled_noise(df['product_price'] / (df['freight_value'] + 1))
+    # 1. Calcular score base
+    base_scores = calculate_composite_score(df)
+    base_scores = add_controlled_noise(base_scores)
     
-    # 2. Calcular scores base con pesos variables
-    weights = np.random.normal([0.4, 0.3, 0.3], 0.05)
-    weights = weights / np.sum(weights)
+    # 2. Definir fronteras para tres clases
+    q33 = np.percentile(base_scores, 33.33)  # Primer tercil
+    q67 = np.percentile(base_scores, 66.67)  # Segundo tercil
     
-    base_scores = (
-        price_distance_ratio * weights[0] +
-        price_volume_ratio * weights[1] +
-        price_freight_ratio * weights[2]
-    )
+    # 3. Definir zonas de transición
+    transition_width = 0.1  # 10% de zona de transición
+    range_width = q67 - q33
     
-    # 3. Definir fronteras
-    q30, q40 = np.percentile(base_scores, [30, 40])
-    q60, q70 = np.percentile(base_scores, [60, 70])
+    low_high = q33 + transition_width * range_width
+    mid_low = q33 - transition_width * range_width
+    mid_high = q67 - transition_width * range_width
+    high_low = q67 + transition_width * range_width
     
-    # 4. Crear máscara para cada zona
-    low_mask = base_scores < q30
-    high_mask = base_scores > q70
-    low_trans_mask = (base_scores >= q30) & (base_scores < q40)
-    high_trans_mask = (base_scores >= q60) & (base_scores < q70)
-    mid_mask = (base_scores >= q40) & (base_scores < q60)
+    # 4. Inicializar etiquetas
+    labels = np.ones(n_samples)  # Inicializar todo como clase media
     
-    # 5. Inicializar array de etiquetas
-    labels = np.zeros(n_samples)
+    # 5. Asignar etiquetas con zonas de transición
+    # Zonas claras
+    labels[base_scores < mid_low] = 0  # Claramente baja
+    labels[base_scores > high_low] = 2  # Claramente alta
     
-    # Asignar etiquetas directas
-    labels[high_mask] = 2
-    
-    # Zonas de transición
-    n_low_trans = np.sum(low_trans_mask)
-    if n_low_trans > 0:
-        trans_scores = (base_scores[low_trans_mask] - q30) / (q40 - q30)
+    # Zonas de transición baja-media
+    trans_low_mask = (base_scores >= mid_low) & (base_scores <= low_high)
+    n_trans_low = np.sum(trans_low_mask)
+    if n_trans_low > 0:
+        trans_scores = (base_scores[trans_low_mask] - mid_low) / (low_high - mid_low)
         probs = norm.cdf(trans_scores, loc=0.5, scale=0.2)
-        labels[low_trans_mask] = np.random.binomial(1, probs)
+        labels[trans_low_mask] = np.random.binomial(1, probs)
     
-    n_high_trans = np.sum(high_trans_mask)
-    if n_high_trans > 0:
-        trans_scores = (base_scores[high_trans_mask] - q60) / (q70 - q60)
+    # Zonas de transición media-alta
+    trans_high_mask = (base_scores >= mid_high) & (base_scores <= high_low)
+    n_trans_high = np.sum(trans_high_mask)
+    if n_trans_high > 0:
+        trans_scores = (base_scores[trans_high_mask] - mid_high) / (high_low - mid_high)
         probs = norm.cdf(trans_scores, loc=0.5, scale=0.2)
-        labels[high_trans_mask] = 1 + np.random.binomial(1, probs)
-    
-    # Zona media - Corregido el broadcasting
-    n_mid = np.sum(mid_mask)
-    if n_mid > 0:
-        mid_scores = base_scores[mid_mask]
-        mid_mean = np.mean([q40, q60])
-        # Asignar probabilidades según la posición en la zona media
-        labels[mid_mask] = np.where(
-            mid_scores < mid_mean,
-            np.random.choice([0, 1, 2], size=n_mid, p=[0.15, 0.75, 0.1]),
-            np.random.choice([0, 1, 2], size=n_mid, p=[0.1, 0.75, 0.15])
-        )
+        labels[trans_high_mask] = 1 + np.random.binomial(1, probs)
     
     # 6. Ajustar casos extremos
-    extreme_ratio = price_distance_ratio * price_volume_ratio * price_freight_ratio
-    extreme_high = extreme_ratio > np.percentile(extreme_ratio, 95)
-    extreme_low = extreme_ratio < np.percentile(extreme_ratio, 5)
+    extreme_score = (
+        df['product_price'] / 
+        (df['freight_value'] + df['distance'] + df['product_volume'])
+    )
     
-    # Ajustar con probabilidad
-    random_mask = np.random.random(n_samples) < 0.9
-    labels[extreme_high & random_mask] = 2
-    labels[extreme_high & ~random_mask] = 1
-    labels[extreme_low & random_mask] = 0
-    labels[extreme_low & ~random_mask] = 1
+    extreme_high = extreme_score > np.percentile(extreme_score, 95)
+    extreme_low = extreme_score < np.percentile(extreme_score, 5)
+    
+    # Aplicar ajustes con probabilidad
+    random_high = np.random.random(n_samples) < 0.9
+    random_low = np.random.random(n_samples) < 0.9
+    
+    labels[extreme_high & random_high] = 2
+    labels[extreme_high & ~random_high] = 1
+    labels[extreme_low & random_low] = 0
+    labels[extreme_low & ~random_low] = 1
     
     return pd.Series(labels)
 
@@ -101,5 +120,5 @@ if __name__ == "__main__":
         print(f"Clase {int(label)}: {count} casos ({percentage:.2f}%)")
     
     # Guardar resultados
-    df.to_csv("envios_etiquetado_fuzzy1.csv", sep=';', index=False)
+    df.to_csv("envios_etiquetado_fuzzy2.csv", sep=';', index=False)
     print("\nProceso de etiquetado completado exitosamente.")
