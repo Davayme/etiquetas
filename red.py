@@ -1,4 +1,4 @@
-# 1. Importar librerías necesarias
+# 1. Importación de bibliotecas necesarias
 import pandas as pd
 import numpy as np
 import tensorflow as tf
@@ -9,196 +9,244 @@ from sklearn.metrics import classification_report
 import matplotlib.pyplot as plt
 import os
 
-# 2. Cargar datos
-df = pd.read_csv('labeled_dataset_fuzzy.csv', sep=';')
+#---------------------------- PREPARACIÓN DE DATOS ----------------------------#
 
-# 3. Definir características
-numeric_features = ['review_score', 'customer_complaints', 'shipping_time_days', 
-                  'freight_value', 'order_price']
-categorical_features = ['customer_region', 'seller_region']
+# 2. Carga del conjunto de datos
+# El archivo contiene información sobre satisfacción de clientes y características asociadas
+datos_crudos = pd.read_csv('labeled_dataset_fuzzy.csv', sep=';')
 
-# 4. Preprocesamiento
-# Normalizar variables numéricas
-scaler = StandardScaler()
-X_numeric = scaler.fit_transform(df[numeric_features])
+# 3. Definición de características (variables de entrada)
+# Variables numéricas que influyen en la satisfacción del cliente
+caracteristicas_numericas = [
+    'review_score',           # Puntuación de la reseña
+    'customer_complaints',    # Número de quejas del cliente
+    'shipping_time_days',     # Tiempo de envío en días
+    'freight_value',         # Valor del flete
+    'order_price'            # Precio del pedido
+]
 
-# Codificar variables categóricas
-encoder = OneHotEncoder(sparse_output=False)
-X_categorical = encoder.fit_transform(df[categorical_features])
+# Variables categóricas que pueden afectar la satisfacción
+caracteristicas_categoricas = [
+    'customer_region',        # Región del cliente
+    'seller_region'          # Región del vendedor
+]
 
-# Combinar features
-X = np.hstack([X_numeric, X_categorical])
-y = tf.keras.utils.to_categorical(df['customer_satisfaction'])
+# 4. Preprocesamiento de datos
+# Normalización de variables numéricas (media 0, desviación estándar 1)
+normalizador = StandardScaler()
+X_normalizado = normalizador.fit_transform(datos_crudos[caracteristicas_numericas])
 
-# Calcular class weights
-y_original = df['customer_satisfaction']
-class_weights = compute_class_weight('balanced', 
+# Codificación one-hot de variables categóricas
+codificador = OneHotEncoder(sparse_output=False)
+X_categorico = codificador.fit_transform(datos_crudos[caracteristicas_categoricas])
+
+# Combinación de todas las características
+X_combinado = np.hstack([X_normalizado, X_categorico])
+
+# Preparación de variable objetivo (satisfacción del cliente)
+y_codificado = tf.keras.utils.to_categorical(datos_crudos['customer_satisfaction'])
+
+# Cálculo de pesos para balancear las clases
+y_original = datos_crudos['customer_satisfaction']
+pesos_clases = compute_class_weight('balanced', 
                                   classes=np.unique(y_original), 
                                   y=y_original)
-class_weight_dict = dict(enumerate(class_weights))
+diccionario_pesos = dict(enumerate(pesos_clases))
 
-# 5. Configurar la validación cruzada
-n_splits = 5
-skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+#---------------------------- CONFIGURACIÓN DEL MODELO ----------------------------#
 
-# Variables para almacenar resultados
-histories = []
-test_scores = []
-train_errors = []
-test_errors = []
-best_val_acc = 0
-best_model_weights = None
-best_fold = 0
-best_fold_history = None
-best_X_val = None
-best_y_val = None
+# 5. Configuración de la validación cruzada
+numero_particiones = 5
+validacion_cruzada = StratifiedKFold(n_splits=numero_particiones, 
+                                    shuffle=True, 
+                                    random_state=42)
 
-# 6. Función para crear el modelo
-def create_model(input_shape):
-   model = tf.keras.Sequential([
-       tf.keras.layers.Dense(24, activation='relu', input_shape=(input_shape,)),
-       tf.keras.layers.BatchNormalization(),
-       tf.keras.layers.Dropout(0.4),
-       
-       tf.keras.layers.Dense(16, activation='relu'),
-       tf.keras.layers.BatchNormalization(),
-       tf.keras.layers.Dropout(0.4),
-       
-       tf.keras.layers.Dense(3, activation='softmax')
-   ])
-   
-   model.compile(
-       optimizer=tf.keras.optimizers.Adam(learning_rate=0.0005),
-       loss='categorical_crossentropy',
-       metrics=['accuracy']
-   )
-   return model
+# Variables para almacenar resultados del entrenamiento
+historiales = []
+puntajes_prueba = []
+errores_entrenamiento = []
+errores_prueba = []
+mejor_precision = 0
+mejores_pesos = None
+mejor_particion = 0
+historial_mejor_particion = None
+mejor_X_val = None
+mejor_y_val = None
 
-# 7. Entrenamiento con validación cruzada
-for fold, (train_idx, val_idx) in enumerate(skf.split(X, y_original)):
-   print(f'\nFold {fold + 1}/{n_splits}')
-   
-   # Split the data
-   X_train, X_val = X[train_idx], X[val_idx]
-   y_train, y_val = y[train_idx], y[val_idx]
-   
-   # Crear modelo
-   model = create_model(X.shape[1])
-   
-   # Callbacks
-   callbacks = [
-       tf.keras.callbacks.EarlyStopping(
-           patience=8,
-           restore_best_weights=True,
-           monitor='val_loss',
-           min_delta=0.001
-       ),
-       tf.keras.callbacks.ReduceLROnPlateau(
-           factor=0.2,
-           patience=4,
-           min_lr=0.0001
-       )
-   ]
-   
-   # Entrenar el modelo
-   history = model.fit(
-       X_train, y_train,
-       validation_data=(X_val, y_val),
-       epochs=100,
-       batch_size=256,
-       callbacks=callbacks,
-       class_weight=class_weight_dict,
-       verbose=1
-   )
-   
-   # Evaluar el modelo en datos de entrenamiento y validación
-   train_score = model.evaluate(X_train, y_train, verbose=0)
-   test_score = model.evaluate(X_val, y_val, verbose=0)
-   test_scores.append(test_score)
-   histories.append(history.history)
-   train_errors.append(1 - train_score[1])
-   test_errors.append(1 - test_score[1])
-   
-   print(f'\nResultados del Fold {fold + 1}:')
-   print(f'Error de entrenamiento: {1 - train_score[1]:.4f}')
-   print(f'Error de testeo: {1 - test_score[1]:.4f}')
-   print(f'Pérdida de entrenamiento: {train_score[0]:.4f}')
-   print(f'Pérdida de testeo: {test_score[0]:.4f}')
-   
-   # Guardar el mejor modelo
-   if test_score[1] > best_val_acc:
-       best_val_acc = test_score[1]
-       best_model_weights = model.get_weights()
-       best_fold = fold
-       best_fold_history = history.history
-       best_X_val = X_val
-       best_y_val = y_val
-       print(f'*** Nuevo mejor modelo encontrado en Fold {fold + 1} ***')
+# 6. Definición de la arquitectura de la red neuronal
+def crear_modelo(forma_entrada):
+    """
+    Crea un modelo de red neuronal para clasificación de satisfacción del cliente
+    
+    Arquitectura:
+    - Capa de entrada: 24 neuronas
+    - Capa oculta: 16 neuronas
+    - Capa de salida: 3 neuronas (clasificación multiclase)
+    
+    Cada capa densa incluye:
+    - Normalización por lotes (BatchNormalization)
+    - Dropout para prevenir sobreajuste
+    """
+    modelo = tf.keras.Sequential([
+        # Capa de entrada
+        tf.keras.layers.Dense(24, activation='relu', input_shape=(forma_entrada,)),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Dropout(0.4),
+        
+        # Capa oculta
+        tf.keras.layers.Dense(16, activation='relu'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Dropout(0.4),
+        
+        # Capa de salida (3 clases de satisfacción)
+        tf.keras.layers.Dense(3, activation='softmax')
+    ])
+    
+    # Configuración del proceso de entrenamiento
+    modelo.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.0005),
+        loss='categorical_crossentropy',  # Función de pérdida para clasificación multiclase
+        metrics=['accuracy']              # Métrica principal: precisión
+    )
+    return modelo
 
-# 8. Calcular y mostrar resultados promedio
-mean_test_loss = np.mean([score[0] for score in test_scores])
-mean_test_acc = np.mean([score[1] for score in test_scores])
-std_test_acc = np.std([score[1] for score in test_scores])
+#---------------------------- ENTRENAMIENTO DEL MODELO ----------------------------#
 
-print('\nResultados de validación cruzada:')
-print(f'Exactitud media: {mean_test_acc:.4f} ± {std_test_acc:.4f}')
-print(f'Pérdida media: {mean_test_loss:.4f}')
-print(f'\nMejor fold: {best_fold + 1}')
-print(f'Mejor exactitud de validación: {best_val_acc:.4f}')
+# 7. Entrenamiento usando validación cruzada
+for indice_particion, (indices_entrenamiento, indices_validacion) in enumerate(
+    validacion_cruzada.split(X_combinado, y_original)):
+    
+    print(f'\nPartición {indice_particion + 1}/{numero_particiones}')
+    
+    # Separación de datos para esta partición
+    X_entrenamiento = X_combinado[indices_entrenamiento]
+    X_validacion = X_combinado[indices_validacion]
+    y_entrenamiento = y_codificado[indices_entrenamiento]
+    y_validacion = y_codificado[indices_validacion]
+    
+    # Creación del modelo para esta partición
+    modelo = crear_modelo(X_combinado.shape[1])
+    
+    # Configuración de callbacks para optimizar el entrenamiento
+    callbacks = [
+        # Detiene el entrenamiento si no hay mejora
+        tf.keras.callbacks.EarlyStopping(
+            patience=8,                    # Épocas a esperar antes de detener
+            restore_best_weights=True,     # Restaura los mejores pesos encontrados
+            monitor='val_loss',            # Monitorea la pérdida en validación
+            min_delta=0.001                # Cambio mínimo considerado como mejora
+        ),
+        # Reduce la tasa de aprendizaje cuando el modelo se estanca
+        tf.keras.callbacks.ReduceLROnPlateau(
+            factor=0.2,                    # Factor de reducción del learning rate
+            patience=4,                    # Épocas a esperar antes de reducir
+            min_lr=0.0001                  # Learning rate mínimo
+        )
+    ]
+    
+    # Entrenamiento del modelo
+    historial = modelo.fit(
+        X_entrenamiento, y_entrenamiento,
+        validation_data=(X_validacion, y_validacion),
+        epochs=100,                        # Número máximo de épocas
+        batch_size=256,                    # Tamaño del lote
+        callbacks=callbacks,
+        class_weight=diccionario_pesos,    # Pesos para balancear clases
+        verbose=1
+    )
+    
+    # Evaluación del modelo
+    puntuacion_entrenamiento = modelo.evaluate(X_entrenamiento, y_entrenamiento, verbose=0)
+    puntuacion_prueba = modelo.evaluate(X_validacion, y_validacion, verbose=0)
+    
+    # Almacenamiento de resultados
+    puntajes_prueba.append(puntuacion_prueba)
+    historiales.append(historial.history)
+    errores_entrenamiento.append(1 - puntuacion_entrenamiento[1])
+    errores_prueba.append(1 - puntuacion_prueba[1])
+    
+    # Impresión de resultados de la partición
+    print(f'\nResultados de la Partición {indice_particion + 1}:')
+    print(f'Error de entrenamiento: {1 - puntuacion_entrenamiento[1]:.4f}')
+    print(f'Error de prueba: {1 - puntuacion_prueba[1]:.4f}')
+    print(f'Pérdida en entrenamiento: {puntuacion_entrenamiento[0]:.4f}')
+    print(f'Pérdida en prueba: {puntuacion_prueba[0]:.4f}')
+    
+    # Actualización del mejor modelo si corresponde
+    if puntuacion_prueba[1] > mejor_precision:
+        mejor_precision = puntuacion_prueba[1]
+        mejores_pesos = modelo.get_weights()
+        mejor_particion = indice_particion
+        historial_mejor_particion = historial.history
+        mejor_X_val = X_validacion
+        mejor_y_val = y_validacion
+        print(f'*** Nuevo mejor modelo encontrado en Partición {indice_particion + 1} ***')
 
-# 9. Visualizar resultados
+#---------------------------- EVALUACIÓN DE RESULTADOS ----------------------------#
+
+# 8. Cálculo de métricas finales
+perdida_media = np.mean([score[0] for score in puntajes_prueba])
+precision_media = np.mean([score[1] for score in puntajes_prueba])
+desviacion_precision = np.std([score[1] for score in puntajes_prueba])
+
+print('\nResultados de la Validación Cruzada:')
+print(f'Precisión media: {precision_media:.4f} ± {desviacion_precision:.4f}')
+print(f'Pérdida media: {perdida_media:.4f}')
+print(f'\nMejor partición: {mejor_particion + 1}')
+print(f'Mejor precisión de validación: {mejor_precision:.4f}')
+
+# 9. Visualización de resultados
 plt.figure(figsize=(15, 10))
 
-# Encontrar la longitud mínima de los historiales
-min_length = min([len(h['accuracy']) for h in histories])
+# Procesamiento de historiales para visualización
+longitud_minima = min([len(h['accuracy']) for h in historiales])
+historiales_alineados = []
+for h in historiales:
+    historial_alineado = {
+        'accuracy': h['accuracy'][:longitud_minima],
+        'val_accuracy': h['val_accuracy'][:longitud_minima],
+        'loss': h['loss'][:longitud_minima],
+        'val_loss': h['val_loss'][:longitud_minima]
+    }
+    historiales_alineados.append(historial_alineado)
 
-# Recortar todos los historiales a la misma longitud
-histories_aligned = []
-for h in histories:
-   history_aligned = {
-       'accuracy': h['accuracy'][:min_length],
-       'val_accuracy': h['val_accuracy'][:min_length],
-       'loss': h['loss'][:min_length],
-       'val_loss': h['val_loss'][:min_length]
-   }
-   histories_aligned.append(history_aligned)
-
-# Gráfico de exactitud promedio
+# Gráficas de rendimiento
+# Superior izquierda: Precisión media
 plt.subplot(2, 2, 1)
-mean_acc = np.mean([h['accuracy'] for h in histories_aligned], axis=0)
-mean_val_acc = np.mean([h['val_accuracy'] for h in histories_aligned], axis=0)
-plt.plot(mean_acc, label='Entrenamiento')
-plt.plot(mean_val_acc, label='Validación')
-plt.title('Exactitud Media (Todos los Folds)')
+precision_media = np.mean([h['accuracy'] for h in historiales_alineados], axis=0)
+precision_val_media = np.mean([h['val_accuracy'] for h in historiales_alineados], axis=0)
+plt.plot(precision_media, label='Entrenamiento')
+plt.plot(precision_val_media, label='Validación')
+plt.title('Precisión Media (Todas las Particiones)')
 plt.xlabel('Época')
-plt.ylabel('Exactitud')
+plt.ylabel('Precisión')
 plt.legend()
 
-# Gráfico de pérdida promedio
+# Superior derecha: Pérdida media
 plt.subplot(2, 2, 2)
-mean_loss = np.mean([h['loss'] for h in histories_aligned], axis=0)
-mean_val_loss = np.mean([h['val_loss'] for h in histories_aligned], axis=0)
-plt.plot(mean_loss, label='Entrenamiento')
-plt.plot(mean_val_loss, label='Validación')
-plt.title('Pérdida Media (Todos los Folds)')
+perdida_media = np.mean([h['loss'] for h in historiales_alineados], axis=0)
+perdida_val_media = np.mean([h['val_loss'] for h in historiales_alineados], axis=0)
+plt.plot(perdida_media, label='Entrenamiento')
+plt.plot(perdida_val_media, label='Validación')
+plt.title('Pérdida Media (Todas las Particiones)')
 plt.xlabel('Época')
 plt.ylabel('Pérdida')
 plt.legend()
 
-# Gráfico de exactitud del mejor fold
+# Inferior izquierda: Precisión de la mejor partición
 plt.subplot(2, 2, 3)
-plt.plot(best_fold_history['accuracy'], label='Entrenamiento')
-plt.plot(best_fold_history['val_accuracy'], label='Validación')
-plt.title(f'Exactitud del Mejor Fold ({best_fold + 1})')
+plt.plot(historial_mejor_particion['accuracy'], label='Entrenamiento')
+plt.plot(historial_mejor_particion['val_accuracy'], label='Validación')
+plt.title(f'Precisión de la Mejor Partición ({mejor_particion + 1})')
 plt.xlabel('Época')
-plt.ylabel('Exactitud')
+plt.ylabel('Precisión')
 plt.legend()
 
-# Gráfico de pérdida del mejor fold
+# Inferior derecha: Pérdida de la mejor partición
 plt.subplot(2, 2, 4)
-plt.plot(best_fold_history['loss'], label='Entrenamiento')
-plt.plot(best_fold_history['val_loss'], label='Validación')
-plt.title(f'Pérdida del Mejor Fold ({best_fold + 1})')
+plt.plot(historial_mejor_particion['loss'], label='Entrenamiento')
+plt.plot(historial_mejor_particion['val_loss'], label='Validación')
+plt.title(f'Pérdida de la Mejor Partición ({mejor_particion + 1})')
 plt.xlabel('Época')
 plt.ylabel('Pérdida')
 plt.legend()
@@ -206,18 +254,18 @@ plt.legend()
 plt.tight_layout()
 plt.show()
 
-# 10. Crear y configurar el mejor modelo para las predicciones finales
-best_model = create_model(X.shape[1])
-best_model.set_weights(best_model_weights)
+# 10. Evaluación final del mejor modelo
+mejor_modelo = crear_modelo(X_combinado.shape[1])
+mejor_modelo.set_weights(mejores_pesos)
 
-# Obtener predicciones del mejor modelo
-best_predictions = best_model.predict(best_X_val)
-y_pred_classes = np.argmax(best_predictions, axis=1)
-y_val_classes = np.argmax(best_y_val, axis=1)
+# Predicciones con el mejor modelo
+mejores_predicciones = mejor_modelo.predict(mejor_X_val)
+clases_predichas = np.argmax(mejores_predicciones, axis=1)
+clases_reales = np.argmax(mejor_y_val, axis=1)
 
 print('\nReporte de clasificación del mejor modelo:')
-print(classification_report(y_val_classes, y_pred_classes))
+print(classification_report(clases_reales, clases_predichas))
 
-# Mostrar errores promedio finales
-print(f'\nError promedio de entrenamiento: {np.mean(train_errors):.4f}')
-print(f'Error promedio de prueba: {np.mean(test_errors):.4f}')
+# Errores promedio finales
+print(f'\nError promedio de entrenamiento: {np.mean(errores_entrenamiento):.4f}')
+print(f'Error promedio de prueba: {np.mean(errores_prueba):.4f}')
