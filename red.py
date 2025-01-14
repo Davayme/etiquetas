@@ -75,30 +75,19 @@ mejor_y_val = None
 
 # 6. Definición de la arquitectura de la red neuronal
 def crear_modelo(forma_entrada):
-    """
-    Crea un modelo de red neuronal para clasificación de satisfacción del cliente
-    
-    Arquitectura:
-    - Capa de entrada: 24 neuronas
-    - Capa oculta: 16 neuronas
-    - Capa de salida: 3 neuronas (clasificación multiclase)
-    
-    Cada capa densa incluye:
-    - Normalización por lotes (BatchNormalization)
-    - Dropout para prevenir sobreajuste
-    """
+
     modelo = tf.keras.Sequential([
-        # Capa de entrada
+        # Primera capa densa (recibe los datos de entrada con forma_entrada características)
         tf.keras.layers.Dense(24, activation='relu', input_shape=(forma_entrada,)),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Dropout(0.4),
         
-        # Capa oculta
+        # Segunda capa densa
         tf.keras.layers.Dense(16, activation='relu'),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Dropout(0.4),
         
-        # Capa de salida (3 clases de satisfacción)
+        # Capa de salida (3 neuronas para clasificación multiclase)
         tf.keras.layers.Dense(3, activation='softmax')
     ])
     

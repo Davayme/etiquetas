@@ -69,41 +69,27 @@ mejor_y_validacion = None
 
 # 6. Definición de la arquitectura de la red neuronal
 def crear_modelo(forma_entrada):
-    """
-    Crea un modelo de red neuronal para clasificación de rentabilidad de envíos
-    
-    Arquitectura:
-    - Capa de entrada: 96 neuronas
-    - Primera capa oculta: 64 neuronas
-    - Segunda capa oculta: 48 neuronas
-    - Tercera capa oculta: 32 neuronas
-    - Capa de salida: 3 neuronas (clasificación multiclase)
-    
-    Cada capa incluye:
-    - Regularización L2 para prevenir sobreajuste
-    - Normalización por lotes para estabilidad
-    - Dropout para regularización adicional
-    """
+
     modelo = tf.keras.Sequential([
-        # Capa de entrada con alta capacidad inicial
+         # Primera capa densa con 96 neuronas
         tf.keras.layers.Dense(96, activation='relu', input_shape=(forma_entrada,),
                             kernel_regularizer=tf.keras.regularizers.l2(0.002)),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Dropout(0.3),
         
-        # Primera capa oculta
+         # Segunda capa densa
         tf.keras.layers.Dense(64, activation='relu',
                             kernel_regularizer=tf.keras.regularizers.l2(0.002)),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Dropout(0.3),
         
-        # Segunda capa oculta
+        # Tercera capa densa
         tf.keras.layers.Dense(48, activation='relu',
                             kernel_regularizer=tf.keras.regularizers.l2(0.002)),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Dropout(0.25),
         
-        # Tercera capa oculta
+        # Cuarta capa densa
         tf.keras.layers.Dense(32, activation='relu',
                             kernel_regularizer=tf.keras.regularizers.l2(0.002)),
         tf.keras.layers.BatchNormalization(),

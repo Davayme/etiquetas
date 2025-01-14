@@ -5,7 +5,7 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 import matplotlib.pyplot as plt
 
 # Cargar datos
-df = pd.read_csv('etiquetado_envios.csv', sep=';')
+df = pd.read_csv('envios_etiquetado_fuzzy2.csv', sep=';')
 
 # Definir características
 numeric_features = ['product_price',
